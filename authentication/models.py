@@ -2,6 +2,11 @@ from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.utils import timezone
 
+from django.db import models
+from django.utils import timezone
+from cryptography.fernet import Fernet
+from django.conf import settings
+
 class CustomUserManager(BaseUserManager):
     """Manager for creating CustomUser instances."""
     def create_user(self, email, username, password=None, **extra_fields):
@@ -56,4 +61,37 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
         ordering = ['created_at']
         indexes = [
             models.Index(fields=['email', 'username']),  # Composite index for common queries
+        ]
+
+
+# Generate encryption key once and store in settings
+ENCRYPTION_KEY = Fernet.generate_key()
+FERNET = Fernet(ENCRYPTION_KEY)
+
+class OTP(models.Model):
+    email = models.EmailField(unique=True)
+    otp_encrypted = models.BinaryField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+
+    def save(self, *args, **kwargs):
+        if not self.expires_at:
+            self.expires_at = timezone.now() + timezone.timedelta(minutes=1)
+        super().save(*args, **kwargs)
+
+    def set_otp(self, otp):
+        """Encrypt OTP before saving"""
+        self.otp_encrypted = FERNET.encrypt(str(otp).encode())
+
+    def get_otp(self):
+        """Decrypt OTP for verification"""
+        return FERNET.decrypt(self.otp_encrypted).decode()
+
+    def is_expired(self):
+        return timezone.now() > self.expires_at
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['email']),
+            models.Index(fields=['expires_at']),
         ]

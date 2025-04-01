@@ -38,9 +38,17 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
+    'corsheaders',
+    
+
     'rest_framework_simplejwt',
     'authentication',
 ]
+
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173", 
+]
+
 
 AUTH_USER_MODEL = 'authentication.CustomUser'
 
@@ -57,6 +65,8 @@ from datetime import timedelta
 
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
+    'USER_ID_FIELD': 'user_id',  
+    'USER_ID_CLAIM': 'user_id',
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
@@ -73,6 +83,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+     'corsheaders.middleware.CorsMiddleware',
 ]
 
 
@@ -92,14 +103,39 @@ TEMPLATES = [
     },
 ]
 
+# settings.py
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'  # Gmail's SMTP server
+EMAIL_PORT = 587 
+EMAIL_USE_TLS = True  
+EMAIL_HOST_USER = 'bitcodeofficial01@gmail.com'
+EMAIL_HOST_PASSWORD = 'czma pmyz vitx szda'  
+DEFAULT_FROM_EMAIL = EMAIL_HOST_USER  
+
+# Redis configuration
+CACHES = {
+    "default": {
+        "BACKEND": "django_redis.cache.RedisCache",
+        "LOCATION": "redis://127.0.0.1:6379/1",
+        "OPTIONS": {
+            "CLIENT_CLASS": "django_redis.client.DefaultClient",
+        }
+    }
+}
+
+
 
 # Database
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'bit_code_db',  # Your new database name
+        'USER': 'bitcode_user',  # Your PostgreSQL username
+        'PASSWORD': 'bitcode24012001',  # Your PostgreSQL password
+        'HOST': 'localhost',  # Change to your database host if needed
+        'PORT': '5432',  # Default PostgreSQL port
     }
 }
 
@@ -121,7 +157,7 @@ AUTH_PASSWORD_VALIDATORS = [
         'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
     },
 ]
-
+CORS_ALLOW_CREDENTIALS = True
 
 # Internationalization
 # https://docs.djangoproject.com/en/4.2/topics/i18n/
