@@ -1,6 +1,7 @@
 from rest_framework import serializers
-from .models import CustomUser
 from rest_framework.validators import UniqueValidator
+from .models import OTP, CustomUser
+
 
 class RegisterSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(
@@ -23,7 +24,17 @@ class RegisterSerializer(serializers.ModelSerializer):
             username=validated_data['username'],
             password=validated_data['password']
         )
+        # Clear OTP after successful registration
+        OTP.objects.filter(email=validated_data['email']).delete()
         return user
+
+
+
+
+class OTPSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = OTP
+        fields = ('email',)
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
