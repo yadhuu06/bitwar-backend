@@ -39,4 +39,4 @@ class OTPSerializer(serializers.ModelSerializer):
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
-        fields = ('user_id', 'username', 'email', 'created_at', 'updated_at', 'auth_type')
+        fields = ('user_id', 'username', 'email', 'created_at', 'is_blocked','updated_at', 'auth_type')
