@@ -101,7 +101,7 @@ SIMPLE_JWT = {
     'SIGNING_KEY': SECRET_KEY,  
     'ALGORITHM': 'HS256', 
     'AUTH_HEADER_TYPES': ('Bearer',),  
-    'USER_ID_FIELD': 'id',
+    'USER_ID_FIELD': 'user_id',
     'USER_ID_CLAIM': 'user_id',  
     'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
     'TOKEN_TYPE_CLAIM': 'token_type',
