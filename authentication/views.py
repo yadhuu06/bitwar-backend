@@ -37,10 +37,9 @@ def generate_auth_response(user):
         'refresh': str(refresh),
         'access': str(refresh.access_token),
         'role': 'admin' if user.is_superuser else 'user',
-        'redirect_url': redirect_path  # Return only the path for React frontend
+        'redirect_url': redirect_path  
     }
 
-# 1. Registration Views
 @api_view(['POST'])
 @permission_classes([AllowAny])
 @csrf_exempt

@@ -129,7 +129,11 @@ SOCIAL_AUTH_PIPELINE = (
 
 SOCIAL_AUTH_LOGIN_REDIRECT_URL = '/api/auth/google/callback/'
 SOCIAL_AUTH_LOGIN_ERROR_URL = '/login-error/'
-FRONTEND_URL = 'http://localhost:5173'  
+
+
+
+FRONTEND_URL = 'http://localhost:5173' 
+BACKEND_URL='http://127.0.0.1:8000/'
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',  
