@@ -17,93 +17,47 @@ from .serializers import OTPSerializer, RegisterSerializer, UserSerializer
 from rest_framework_simplejwt.token_blacklist.models import OutstandingToken, BlacklistedToken
 from rest_framework_simplejwt.exceptions import TokenError
 import logging
+from django.http import HttpResponse
+
+
+
+
+logger = logging.getLogger(__name__)
 
 
 class OTPThrottle(AnonRateThrottle):
-    rate = '10/hour' 
+    rate = '10/hour'
 
 
 def generate_auth_response(user):
-
     refresh = RefreshToken.for_user(user)
-    redirect_url = '/api/auth/admin-dashboard/' if user.is_superuser else '/api/auth/user-dashboard/'
+    frontend_base_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
+    redirect_path = '/user/dashboard' if not user.is_superuser else '/admin/dashboard'
     return {
         'refresh': str(refresh),
         'access': str(refresh.access_token),
         'role': 'admin' if user.is_superuser else 'user',
-        'redirect_url': redirect_url
+        'redirect_url': redirect_path  # Return only the path for React frontend
     }
 
+# 1. Registration Views
 @api_view(['POST'])
 @permission_classes([AllowAny])
-@csrf_exempt 
+@csrf_exempt
 def register_view(request):
-
     serializer = RegisterSerializer(data=request.data)
     if serializer.is_valid():
         serializer.save()
-        return Response({"message": "User registered successfully"}, status=status.HTTP_201_CREATED)
+        return Response({"message": "User registered successfully. Check email for OTP."}, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-@api_view(['POST'])
-@permission_classes([AllowAny])  
-@csrf_exempt  
-def login_view(request):
 
-    email = request.data.get('email')
-    password = request.data.get('password')
-    if not email or not password:
-        return Response({"error": "Email and password are required"}, status=status.HTTP_400_BAD_REQUEST)
-    
-    user = authenticate(request, email=email, password=password)
-    if user:
-        return Response(generate_auth_response(user), status=status.HTTP_200_OK)
-    return Response({"error": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
-
-# User profile view
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def profile_view(request):
-
-    serializer = UserSerializer(request.user)
-    return Response(serializer.data, status=status.HTTP_200_OK)
-
-# User dashboard
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def user_dashboard_view(request):
-
-    user = request.user
-    return Response({
-        'message': f"Welcome to the User Dashboard, {user.email}!",
-        'email': user.email,
-        'username': user.username,
-        'role': 'user',
-    }, status=status.HTTP_200_OK)
-
-# Admin dashboard
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def admin_dashboard_view(request):
-
-    user = request.user
-    if not user.is_superuser:
-        return Response({"error": "Admin access required"}, status=status.HTTP_403_FORBIDDEN)
-    return Response({
-        'message': f"Welcome to the Admin Dashboard, {user.email}!",
-        'email': user.email,
-        'username': user.username,
-        'role': 'admin',
-    }, status=status.HTTP_200_OK)
-
-# Generate OTP for email verification
 class GenerateOTPView(APIView):
     throttle_classes = [OTPThrottle]
     permission_classes = [AllowAny]
 
     def post(self, request):
-     
         serializer = OTPSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -113,9 +67,11 @@ class GenerateOTPView(APIView):
             return Response({'error': 'Email already registered'}, status=status.HTTP_400_BAD_REQUEST)
 
         otp = get_random_string(length=6, allowed_chars='0123456789')
-        otp_instance, _ = OTP.objects.update_or_create(
-            email=email, defaults={'otp': otp, 'is_verified': False}
+        otp_instance, created = OTP.objects.update_or_create(
+            email=email,
+            defaults={'is_verified': False}
         )
+        otp_instance.set_otp(otp) 
 
         try:
             send_mail(
@@ -135,12 +91,13 @@ class GenerateOTPView(APIView):
         }, status=status.HTTP_200_OK)
 
 
+
+
 class VerifyOTPView(APIView):
     throttle_classes = [OTPThrottle]
     permission_classes = [AllowAny]
 
     def post(self, request):
-        """Verify the OTP for the given email."""
         email = request.data.get('email')
         otp_input = request.data.get('otp')
         if not email or not otp_input:
@@ -158,12 +115,13 @@ class VerifyOTPView(APIView):
             return Response({'error': 'No OTP found for this email'}, status=status.HTTP_404_NOT_FOUND)
 
 
+
+
 class RegisterCompleteView(APIView):
     throttle_classes = [OTPThrottle]
     permission_classes = [AllowAny]
 
     def post(self, request):
-        """Complete registration after OTP verification."""
         email = request.data.get('email')
         if not email:
             return Response({'error': 'Email is required'}, status=status.HTTP_400_BAD_REQUEST)
@@ -182,37 +140,58 @@ class RegisterCompleteView(APIView):
             return Response(generate_auth_response(user), status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+@api_view(['POST'])
+@permission_classes([AllowAny])
+@csrf_exempt
+def login_view(request):
+    email = request.data.get('email')
+    password = request.data.get('password')
+    if not email or not password:
+        return Response({"error": "Email and password are required"}, status=status.HTTP_400_BAD_REQUEST)
+    
+    user = authenticate(request, email=email, password=password)
+    if user:
+        if user.is_blocked:
+            return Response({"error": "User IS Blocked By Admin"}, status=status.HTTP_401_UNAUTHORIZED)
+
+        return Response(generate_auth_response(user), status=status.HTTP_200_OK)
+    return Response({"error": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
+
+
 
 class GoogleLoginCallback(APIView):
+    print("call coming")
     @psa('social:complete')
     def get(self, request, backend):
- 
+
         user = request.backend.do_auth(request.GET.get('code'))
+        
         if user:
+            print("user fount")
+
             login(request, user, backend='django.contrib.auth.backends.ModelBackend')
-            response_data = generate_auth_response(user)
+            
+            refresh = RefreshToken.for_user(user)
+            print("refresh token generated")
+            response_data = {
+                'refresh': str(refresh),
+                'access': str(refresh.access_token),
+                'user': {
+                    'id': user.user_id,
+                    'email': user.email,
 
-            response_data['redirect_url'] = (
-                f"http://localhost:3000/auth/callback?"
-                f"access_token={response_data['access']}&"
-                f"refresh_token={response_data['refresh']}&"
-                f"email={user.email}&"
-                f"username={user.username}"
-            )
+                },
+                'redirect_url': 'http://localhost:5173/user/dashboard', 
+            }
             return Response(response_data, status=status.HTTP_200_OK)
-        return Response({'error': 'Authentication failed'}, status=status.HTTP_400_BAD_REQUEST)
-    
-    
-def logout_view(request):
-    print()
+        
+        return Response({"error": "Authentication failed"}, status=status.HTTP_400_BAD_REQUEST)                            
 
-
-logger = logging.getLogger(__name__)
-
-
+# 3. Logout View
 @api_view(['POST'])
-@permission_classes([IsAuthenticated]) 
+@permission_classes([IsAuthenticated])
 def logout_view(request):
+
     auth_header = request.headers.get('Authorization')
     if not auth_header or not auth_header.startswith('Bearer '):
         logger.warning("Logout attempted without valid Authorization header")
@@ -222,11 +201,45 @@ def logout_view(request):
     logger.info(f"Logout request with token: {token}")
 
     try:
-        # Optionally blacklist the token
         refresh_token = RefreshToken(token)
-        refresh_token.blacklist()  # Blacklist the refresh token
+        refresh_token.blacklist()
         logger.info("User successfully logged out")
         return Response({"message": "Successfully logged out"}, status=status.HTTP_200_OK)
     except TokenError as e:
         logger.error(f"Token error during logout: {str(e)}")
         return Response({"error": "Invalid token"}, status=status.HTTP_401_UNAUTHORIZED)
+
+# 4. Dashboard Views
+def user_dashboard_view(request):
+    return HttpResponse("Hai")
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def admin_dashboard_view(request):
+
+    user = request.user
+    if not user.is_superuser:
+        return Response({"error": "Admin access required"}, status=status.HTTP_403_FORBIDDEN)
+    return Response({
+        'message': f"Welcome to the Admin Dashboard, {user.email}!",
+        'email': user.email,
+        'username': user.username,
+        'role': 'admin',
+    }, status=status.HTTP_200_OK)
+
+
+@api_view(['GET', 'PATCH'])
+@permission_classes([IsAuthenticated])  
+def profile_view(request):
+    user = request.user
+
+    if request.method == 'GET':
+        serializer = UserSerializer(user)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    elif request.method == 'PATCH':
+        serializer = UserSerializer(user, data=request.data, partial=True)  
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

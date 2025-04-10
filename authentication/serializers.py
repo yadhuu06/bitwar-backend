@@ -36,7 +36,20 @@ class OTPSerializer(serializers.ModelSerializer):
         model = OTP
         fields = ('email',)
 
+
+
+
 class UserSerializer(serializers.ModelSerializer):
+    profile_picture = serializers.ImageField(required=False, allow_null=True)
+
     class Meta:
         model = CustomUser
-        fields = ('user_id', 'username', 'email', 'created_at', 'is_blocked','updated_at', 'auth_type')
+        fields = ['user_id', 'email', 'username', 'profile_picture', 'created_at', 'updated_at', 'auth_type', 'is_active']
+        read_only_fields = ['user_id', 'email', 'created_at', 'updated_at', 'auth_type', 'is_active']
+
+    def update(self, instance, validated_data):
+        if 'profile_picture' in validated_data:
+            instance.profile_picture = validated_data['profile_picture']
+        instance.username = validated_data.get('username', instance.username)
+        instance.save()
+        return instance

@@ -7,9 +7,7 @@ from cryptography.fernet import Fernet
 from django.conf import settings
 
 class CustomUserManager(BaseUserManager):
-    """Manager for creating CustomUser instances."""
     def create_user(self, email, username, password=None, **extra_fields):
-        """Create and save a regular user with the given email, username, and password."""
         if not email:
             raise ValueError('The Email field must be set')
         if not username:
@@ -21,8 +19,8 @@ class CustomUserManager(BaseUserManager):
         user.save(using=self._db)
         return user
 
+
     def create_superuser(self, email, username, password=None, **extra_fields):
-        """Create and save a superuser with the given email, username, and password."""
         extra_fields.setdefault('is_staff', True)
         extra_fields.setdefault('is_superuser', True)
         if extra_fields.get('is_staff') is not True:
@@ -31,17 +29,27 @@ class CustomUserManager(BaseUserManager):
             raise ValueError('Superuser must have is_superuser=True.')
         return self.create_user(email, username, password, **extra_fields)
 
+
 class CustomUser(AbstractBaseUser, PermissionsMixin):
-    """Custom user model with email as the primary identifier."""
     AUTH_TYPE_CHOICES = (
         ('manual', 'Manual'),
         ('google', 'Google'),
         ('github', 'GitHub'),
     )
 
+    def get_default_profile_picture():
+        return 'profile_pics/default/coding_hacker.png'
+
+
     user_id = models.AutoField(primary_key=True)
     email = models.EmailField(unique=True, db_index=True)  
     username = models.CharField(max_length=150, unique=True, db_index=True)  
+    profile_picture = models.ImageField(
+    upload_to='profile_pics/%Y/%m/%d/',
+    blank=True,
+    null=True,
+    default=get_default_profile_picture )
+
     created_at = models.DateTimeField(default=timezone.now, db_index=True)  
     updated_at = models.DateTimeField(auto_now=True)
     auth_type = models.CharField(max_length=10, choices=AUTH_TYPE_CHOICES, default='manual')
@@ -61,7 +69,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     class Meta:
         ordering = ['created_at']
         indexes = [
-            models.Index(fields=['email', 'username']),  # Composite index for common queries
+            models.Index(fields=['email', 'username']),  
         ]
 
 from django.db import models
@@ -69,7 +77,7 @@ from django.utils import timezone
 from cryptography.fernet import Fernet
 from django.conf import settings
 
-# Generate encryption key once and store in settings (move to settings.py ideally)
+
 ENCRYPTION_KEY = getattr(settings, 'FERNET_KEY', Fernet.generate_key())  
 FERNET = Fernet(ENCRYPTION_KEY)
 
@@ -87,8 +95,7 @@ class OTP(models.Model):
         super().save(*args, **kwargs)
 
     def set_otp(self, otp):
-        """Encrypt OTP before saving"""
-        # Ensure OTP is a string and encode it to bytes before encryption
+
         otp_bytes = str(otp).encode('utf-8')
         self.otp_encrypted = FERNET.encrypt(otp_bytes)  
 
@@ -97,11 +104,9 @@ class OTP(models.Model):
         self.save()  
 
     def get_otp(self):
-        """Decrypt OTP for verification"""
         if not self.otp_encrypted:
             return None
-
-        # Handle different possible types from BinaryField
+        
         token = self.otp_encrypted
         if isinstance(token, memoryview):
             token = bytes(token)  
@@ -118,11 +123,9 @@ class OTP(models.Model):
             return None
 
     def is_expired(self):
-        """Check if OTP has expired"""
         return timezone.now() > self.expires_at
 
     def mark_verified(self):
-        """Mark OTP as verified after successful verification"""
         self.is_verified = True
         self.save()
 

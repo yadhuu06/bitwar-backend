@@ -1,5 +1,5 @@
-# authentication/pipeline.py
 from django.contrib.auth import get_user_model, login
+from django.conf import settings
 from social_core.pipeline.user import get_username as social_get_username
 from social_core.exceptions import AuthException
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -56,9 +56,10 @@ def associate_or_create_user(backend, details, response, request, *args, **kwarg
     user.backend = 'django.contrib.auth.backends.ModelBackend'
     login(request, user)
 
-    # Inline token generation and redirect logic (no external dependency)
     refresh = RefreshToken.for_user(user)
-    redirect_url = '/api/auth/admin-dashboard/' if user.is_superuser else '/api/auth/user-dashboard/'
+    # Use the frontend base URL from settings
+    frontend_base_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
+    redirect_url = f"{frontend_base_url}/admin/dashboard" if user.is_superuser else f"{frontend_base_url}/user/dashboard"
     response_data = {
         'refresh': str(refresh),
         'access': str(refresh.access_token),

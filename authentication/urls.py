@@ -2,8 +2,8 @@ from django.urls import path
 from .views import (
     register_view, login_view, profile_view,
     GenerateOTPView, VerifyOTPView, RegisterCompleteView,
-    user_dashboard_view, admin_dashboard_view,
-    GoogleLoginCallback,logout_view
+    admin_dashboard_view,
+    GoogleLoginCallback,logout_view,user_dashboard_view
 )
 
 urlpatterns = [
@@ -19,4 +19,4 @@ urlpatterns = [
     path('logout/', logout_view, name='logout_view'),
 
     
-]
+]   
