@@ -31,7 +31,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'social_django',  
+   
     'rest_framework',
     'corsheaders',
     'rest_framework_simplejwt',
@@ -44,8 +44,7 @@ INSTALLED_APPS = [
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
-    "http://localhost:5174",
-    "http://127.0.0.1:5174",
+
 ]
 
 CORS_ALLOW_CREDENTIALS = True
@@ -127,9 +126,9 @@ SOCIAL_AUTH_PIPELINE = (
     'authentication.pipeline.user_details',
 )
 
-SOCIAL_AUTH_LOGIN_REDIRECT_URL = '/api/auth/google/callback/'
+SOCIAL_AUTH_LOGIN_REDIRECT_URL = 'http://127.0.0.1:5173'
 SOCIAL_AUTH_LOGIN_ERROR_URL = '/login-error/'
-
+SOCIAL_AUTH_JSONFIELD_ENABLED = True
 
 
 FRONTEND_URL = 'http://localhost:5173' 
@@ -244,3 +243,20 @@ if not DEBUG:
     SECURE_BROWSER_XSS_FILTER = True
     SECURE_CONTENT_TYPE_NOSNIFF = True
     X_FRAME_OPTIONS = 'DENY'
+
+
+    LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'loggers': {
+        '': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+        },
+    },
+}

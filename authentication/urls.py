@@ -2,8 +2,7 @@ from django.urls import path
 from .views import (
     register_view, login_view, profile_view,
     GenerateOTPView, VerifyOTPView, RegisterCompleteView,
-    admin_dashboard_view,
-    GoogleLoginCallback,logout_view,user_dashboard_view
+    admin_dashboard_view, GoogleLoginCallback, logout_view, user_dashboard_view
 )
 
 urlpatterns = [
@@ -17,6 +16,4 @@ urlpatterns = [
     path('admin-dashboard/', admin_dashboard_view, name='admin_dashboard'),
     path('google/callback/', GoogleLoginCallback.as_view(), name='google_callback'),
     path('logout/', logout_view, name='logout_view'),
-
-    
-]   
+]

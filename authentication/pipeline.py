@@ -57,7 +57,7 @@ def associate_or_create_user(backend, details, response, request, *args, **kwarg
     login(request, user)
 
     refresh = RefreshToken.for_user(user)
-    # Use the frontend base URL from settings
+
     frontend_base_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
     redirect_url = f"{frontend_base_url}/admin/dashboard" if user.is_superuser else f"{frontend_base_url}/user/dashboard"
     response_data = {
