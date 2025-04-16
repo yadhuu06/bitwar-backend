@@ -1,19 +1,17 @@
 import logging
 from random import randint
 from datetime import timedelta
-
 from django.views.decorators.csrf import csrf_exempt
-from django.contrib.auth import authenticate,  get_user_model
 from django.core.mail import send_mail
 from django.conf import settings
 from django.utils import timezone
 from django.http import HttpResponse
-
+from django.contrib.auth import authenticate, get_user_model
 from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import AllowAny, IsAuthenticated
-from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.decorators import api_view, permission_classes
 from rest_framework.throttling import AnonRateThrottle
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.token_blacklist.models import OutstandingToken, BlacklistedToken
@@ -24,6 +22,7 @@ from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 from .models import OTP, CustomUser
 from .serializers import OTPSerializer, RegisterSerializer, UserSerializer
+from django.template.loader import render_to_string
 
 logger = logging.getLogger(__name__)
 
@@ -45,16 +44,7 @@ def generate_auth_response(user):
         'redirect_url': redirect_path
     }
 
-from django.core.mail import send_mail
-from django.conf import settings
-from django.utils import timezone
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
-from rest_framework.permissions import AllowAny
-from random import randint
-from .models import OTP, CustomUser
-from .serializers import OTPSerializer
+
 
 
 class GenerateOTPView(APIView):
@@ -71,7 +61,7 @@ class GenerateOTPView(APIView):
             return Response({'error': 'Email already registered'}, status=status.HTTP_400_BAD_REQUEST)
 
         # Generate OTP
-        otp = str(randint(100000, 999999))  # Consistent with your current version
+        otp = str(randint(100000, 999999))
         otp_instance = OTP.objects.filter(email=email).first()
 
         # Check resend cooldown (2 minutes)
@@ -90,17 +80,22 @@ class GenerateOTPView(APIView):
         else:
             otp_instance = OTP.objects.create(email=email, is_verified=False)
             otp_instance.set_otp(otp)
-        
+
         otp_instance.save()
         print(f"Generated OTP for {email}: {otp}")  # Debug
 
-        # Attempt to send email
+        # Email content
+        subject = '🔐 < Bit Code > Email Verification - OTP Inside'
+        plain_message = f'Your OTP is: {otp}. Valid for 10 minutes.'
+
+        html_message = render_to_string('emails/otp_verification.html', {'otp': otp})
         try:
             send_mail(
-                subject='Your Bit Code Verification Code',
-                message=f'Your verification code is: {otp}\nValid for 10 minutes.',
+                subject=subject,
+                message=plain_message,
                 from_email=settings.DEFAULT_FROM_EMAIL,
                 recipient_list=[email],
+                html_message=html_message,
                 fail_silently=False,
             )
             print(f"Email sent to {email}")  # Debug
@@ -117,6 +112,7 @@ class GenerateOTPView(APIView):
             'expires_in': expiration_time
         }, status=status.HTTP_200_OK)
     
+
 
 class VerifyOTPView(APIView):
     throttle_classes = [OTPThrottle]
@@ -208,8 +204,6 @@ class GoogleLoginCallback(APIView):
                 {"error": "No credential received"},
                 status=status.HTTP_400_BAD_REQUEST
             )
-
-        # Verify ID token with google-auth-library
         try:
             client_id = config('GOOGLE_CLIENT_ID') 
             token_info = id_token.verify_oauth2_token(

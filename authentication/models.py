@@ -1,10 +1,10 @@
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.utils import timezone
-from django.db import models
-from django.utils import timezone
 from cryptography.fernet import Fernet
 from django.conf import settings
+
+
 
 class CustomUserManager(BaseUserManager):
     def create_user(self, email, username, password=None, **extra_fields):
@@ -72,11 +72,6 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
             models.Index(fields=['email', 'username']),  
         ]
 
-from django.db import models
-from django.utils import timezone
-from cryptography.fernet import Fernet
-from django.conf import settings
-
 
 ENCRYPTION_KEY = getattr(settings, 'FERNET_KEY', Fernet.generate_key())  
 FERNET = Fernet(ENCRYPTION_KEY)
@@ -91,7 +86,7 @@ class OTP(models.Model):
     def save(self, *args, **kwargs):
         if not self.expires_at:
   
-            self.expires_at = timezone.now() + timezone.timedelta(minutes=1)
+            self.expires_at = timezone.now() + timezone.timedelta(minutes=10)
         super().save(*args, **kwargs)
 
     def set_otp(self, otp):
@@ -100,7 +95,7 @@ class OTP(models.Model):
         self.otp_encrypted = FERNET.encrypt(otp_bytes)  
 
         self.is_verified = False
-        self.expires_at = timezone.now() + timezone.timedelta(minutes=1)
+        self.expires_at = timezone.now() + timezone.timedelta(minutes=10)
         self.save()  
 
     def get_otp(self):

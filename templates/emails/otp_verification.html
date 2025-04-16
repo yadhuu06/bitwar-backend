@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bit Code Email Verification</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      line-height: 1.6;
+      color: #333333;
+      background-color: #f7f7f7;
+      margin: 0;
+      padding: 0;
+    }
+    .email-container {
+      max-width: 600px;
+      margin: 40px auto;
+      background-color: #ffffff;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 3px 10px rgba(0, 0, 0, 0.1);
+    }
+    .email-header {
+      background-color: #222222;
+      text-align: center;
+      padding: 30px 20px;
+    }
+    .logo {
+      width: 80px;
+      margin-bottom: 10px;
+    }
+    .company-name {
+      color: #00FF40;
+      font-size: 24px;
+      font-weight: bold;
+      letter-spacing: 1px;
+      margin: 0;
+    }
+    .email-content {
+      padding: 30px;
+      background-color: #ffffff;
+    }
+    .email-content h2 {
+      color: #222222;
+      margin-top: 0;
+      margin-bottom: 20px;
+      font-size: 22px;
+    }
+    .message {
+      margin-bottom: 25px;
+      color: #555555;
+    }
+    .otp-container {
+      text-align: center;
+      margin: 30px 0;
+    }
+    .otp {
+      font-size: 32px;
+      font-weight: bold;
+      background-color: #00FF40;
+      color: #000000;
+      padding: 12px 30px;
+      display: inline-block;
+      border-radius: 6px;
+      letter-spacing: 2px;
+    }
+    .note {
+      font-size: 14px;
+      color: #777777;
+      margin-top: 25px;
+    }
+    .email-footer {
+      background-color: #f7f7f7;
+      padding: 20px;
+      text-align: center;
+      font-size: 12px;
+      color: #999999;
+      border-top: 1px solid #eeeeee;
+    }
+    @media only screen and (max-width: 480px) {
+      .email-container {
+        width: 100%;
+        margin: 0;
+        border-radius: 0;
+      }
+      .email-content {
+        padding: 20px;
+      }
+      .otp {
+        font-size: 28px;
+        padding: 10px 20px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="email-container">
+    <div class="email-header">
+      <h1 class="company-name">&lt; Bit Code &gt;</h1>
+    </div>
+    <div class="email-content">
+      <h2>Email Verification</h2>
+      <div class="message">
+        <p>Thank you for signing up with <strong>&lt; Bit Code &gt;</strong>.</p>
+        <p>Please use the verification code below to complete your registration:</p>
+      </div>
+      <div class="otp-container">
+        <div class="otp">{{ otp }}</div>
+
+      </div>
+      <div class="message">
+        <p>This code will expire in <strong>10 minutes</strong>.</p>
+      </div>
+      <div class="note">
+        <p>If you didn't request this verification code, please disregard this email.</p>
+      </div>
+    </div>
+    <div class="email-footer">
+      &copy; 2025 &lt; Bit Code &gt;. All rights reserved.
+    </div>
+  </div>
+</body>
+</html>
