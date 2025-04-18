@@ -37,3 +37,31 @@ class Room(models.Model):
         return f"Room {self.name} ({self.room_id})"
 
 
+class RoomParticipant(models.Model):
+    ROLE_CHOICES = (
+        ('host', 'Host'),
+        ('participant', 'Participant'),
+    )
+
+    STATUS_CHOICES = (
+        ('joined', 'Joined'),
+        ('left', 'Left'),
+        ('kicked', 'Kicked'),
+        ('waiting', 'Waiting'),
+    )
+
+    room = models.ForeignKey(Room, on_delete=models.CASCADE, related_name='participants')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='room_participations')
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='participant')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='waiting')
+    joined_at = models.DateTimeField(auto_now_add=True)
+    left_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        unique_together = ('room', 'user')
+        indexes = [
+            models.Index(fields=['room', 'status']),
+        ]
+
+    def __str__(self):
+        return f"{self.user.username} in {self.room.name} as {self.role}"
