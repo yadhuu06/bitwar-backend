@@ -1,14 +1,15 @@
 from django.db import models
 from django.conf import settings
 from django.utils import timezone
-import random
 import uuid
+import random
+import string
 
-def generate_unique_code():
-    
+def generate_join_code():
+    characters = string.ascii_uppercase + string.digits
     while True:
-        code = random.randint(10000, 99999)  
-        if not Room.objects.filter(room_id=code).exists():
+        code = ''.join(random.choice(characters) for _ in range(6))
+        if not Room.objects.filter(join_code=code).exists():
             return code
 
 class Room(models.Model):
@@ -23,26 +24,50 @@ class Room(models.Model):
         ('hard', 'Hard'),
     )
 
-    room_id = models.IntegerField(unique=True, default=generate_unique_code, editable=False)
-    name = models.CharField(max_length=100, null=True)
+    room_id = models.UUIDField(unique=True, default=uuid.uuid4, editable=False, primary_key=True)
+    join_code = models.CharField(max_length=6, unique=True, default=generate_join_code, editable=False)
+
+    name = models.CharField(max_length=100, null=False, blank=False)
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='owned_rooms')
-    topic = models.CharField(max_length=50)
-    difficulty = models.CharField(max_length=10, choices=DIFFICULTY_LEVELS)
-    time_limit = models.PositiveIntegerField(help_text="Time limit in minutes")
-    capacity = models.PositiveIntegerField(default=2)
-    visibility = models.CharField(max_length=10, choices=ROOM_VISIBILITY_CHOICES, default='public')
-    password = models.CharField(max_length=128, blank=True, null=True)  
-    is_active = models.BooleanField(default=True)
-    
+    topic = models.CharField(max_length=50, null=False, blank=False)
+    difficulty = models.CharField(max_length=10, choices=DIFFICULTY_LEVELS, null=False, blank=False)
+    time_limit = models.PositiveIntegerField(help_text="Time limit in minutes", null=False, blank=False)
+    capacity = models.PositiveIntegerField(default=2, null=False, blank=False)
+    participant_count = models.PositiveIntegerField(default=1, null=False, blank=False)
+    visibility = models.CharField(max_length=10, choices=ROOM_VISIBILITY_CHOICES, default='public', null=False, blank=False)
+    password = models.CharField(max_length=128, blank=True, null=True)
+    is_active = models.BooleanField(default=True, null=False)
+    status = models.CharField(
+        max_length=20,
+        choices=(('active', 'Active'), ('completed', 'Completed'), ('archived', 'Archived')),
+        default='active',
+        null=False,
+        blank=False
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    class Meta:
+        indexes = [
+            models.Index(fields=['join_code']),
+            models.Index(fields=['owner']),
+            models.Index(fields=['visibility']),
+            models.Index(fields=['status']),
+        ]
+        ordering = ['-created_at']
+
     def is_full(self):
-        return self.participants.count() >= self.capacity
-   
+        return self.participant_count >= self.capacity
+
+    def clean(self):
+        if self.visibility == 'private' and not self.password:
+            raise models.ValidationError({'password': 'Password is required for private rooms.'})
 
     def __str__(self):
-        return f"Room {self.name} ({self.room_id})"
+        return f"Room {self.name} (Join Code: {self.join_code})"
+
+from django.db import models
+from django.conf import settings
 
 class RoomParticipant(models.Model):
     ROLE_CHOICES = (
@@ -51,10 +76,10 @@ class RoomParticipant(models.Model):
     )
 
     STATUS_CHOICES = (
-        ('waiting', 'Waiting'),   
-        ('joined', 'Joined'),     
-        ('left', 'Left'),         
-        ('kicked', 'Kicked'),     
+        ('waiting', 'Waiting'),
+        ('joined', 'Joined'),
+        ('left', 'Left'),
+        ('kicked', 'Kicked'),
     )
 
     room = models.ForeignKey(
@@ -67,9 +92,10 @@ class RoomParticipant(models.Model):
         on_delete=models.CASCADE,
         related_name='room_participations'
     )
-    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='participant')
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='waiting')
-    ready = models.BooleanField(default=False) 
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='participant', null=False, blank=False)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='waiting', null=False, blank=False)
+    ready = models.BooleanField(default=False, null=False)
+    ready_at = models.DateTimeField(null=True, blank=True)  # Tracks when ready status is set
     joined_at = models.DateTimeField(auto_now_add=True)
     left_at = models.DateTimeField(null=True, blank=True)
 
@@ -78,8 +104,15 @@ class RoomParticipant(models.Model):
         indexes = [
             models.Index(fields=['room', 'status']),
             models.Index(fields=['room', 'user']),
+            models.Index(fields=['status']),
         ]
         ordering = ['joined_at']
+
+    def save(self, *args, **kwargs):
+        """Update ready_at when ready status changes."""
+        if self.ready and not self.ready_at:
+            self.ready_at = timezone.now()
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.user.username} in {self.room.name} as {self.role} ({self.status})"
