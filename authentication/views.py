@@ -267,6 +267,7 @@ class GoogleLoginCallback(APIView):
 api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def logout_view(request):
+    print("data=",request.data)
 
     try:
         refresh_token = request.data.get('refresh_token')

@@ -8,7 +8,7 @@ import string
 def generate_join_code():
     characters = string.ascii_uppercase + string.digits
     while True:
-        code = ''.join(random.choice(characters) for _ in range(6))
+        code = ''.join(random.choice(characters) for _ in range(8))  
         if not Room.objects.filter(join_code=code).exists():
             return code
 
@@ -25,7 +25,7 @@ class Room(models.Model):
     )
 
     room_id = models.UUIDField(unique=True, default=uuid.uuid4, editable=False, primary_key=True)
-    join_code = models.CharField(max_length=6, unique=True, default=generate_join_code, editable=False)
+    join_code = models.CharField(max_length=8, unique=True, default=generate_join_code, editable=False)  # Updated to 8
 
     name = models.CharField(max_length=100, null=False, blank=False)
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='owned_rooms')
@@ -66,9 +66,6 @@ class Room(models.Model):
     def __str__(self):
         return f"Room {self.name} (Join Code: {self.join_code})"
 
-from django.db import models
-from django.conf import settings
-
 class RoomParticipant(models.Model):
     ROLE_CHOICES = (
         ('host', 'Host'),
@@ -92,10 +89,12 @@ class RoomParticipant(models.Model):
         on_delete=models.CASCADE,
         related_name='room_participations'
     )
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='participant', null=False, blank=False)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='waiting', null=False, blank=False)
     ready = models.BooleanField(default=False, null=False)
-    ready_at = models.DateTimeField(null=True, blank=True)  # Tracks when ready status is set
+    ready_at = models.DateTimeField(null=True, blank=True)
     joined_at = models.DateTimeField(auto_now_add=True)
     left_at = models.DateTimeField(null=True, blank=True)
 
@@ -109,7 +108,6 @@ class RoomParticipant(models.Model):
         ordering = ['joined_at']
 
     def save(self, *args, **kwargs):
-        """Update ready_at when ready status changes."""
         if self.ready and not self.ready_at:
             self.ready_at = timezone.now()
         super().save(*args, **kwargs)
