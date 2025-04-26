@@ -37,6 +37,7 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'authentication',
     'admin_panel',
+    'channels',
     
 ]
 
@@ -148,6 +149,20 @@ MIDDLEWARE = [
 
 ROOT_URLCONF = 'bitWar_backend.urls'
 WSGI_APPLICATION = 'bitWar_backend.wsgi.application'
+ASGI_APPLICATION = 'bitWar_backend.asgi.application'
+
+
+
+
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [("127.0.0.1", 6379)],
+        },
+    },
+}
+
 
 # Database
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
