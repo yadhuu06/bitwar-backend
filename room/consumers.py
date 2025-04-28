@@ -15,26 +15,35 @@ class RoomConsumer(AsyncWebsocketConsumer):
                 token = param[len('token='):]
                 break
 
+        if not token:
+            await self.close(code=4001, reason="No token provided")
+            return
+
         user = await self.get_user_from_token(token)
         if user is None or isinstance(user, AnonymousUser):
-            await self.close()
+            await self.close(code=4002, reason="Invalid or expired token")
             return
-        
 
         self.scope['user'] = user
-
         await self.channel_layer.group_add('rooms', self.channel_name)
         await self.accept()
         await self.send_room_list()
 
     async def disconnect(self, close_code):
-        await self.channel_layer.group_discard('rooms', self.channel_name)
+        if hasattr(self, 'channel_name'):
+            await self.channel_layer.group_discard('rooms', self.channel_name)
 
     async def receive(self, text_data):
-        text_data_json = json.loads(text_data)
-        message_type = text_data_json.get('type')
-        if message_type == 'request_room_list':
-            await self.send_room_list()
+        try:
+            text_data_json = json.loads(text_data)
+            message_type = text_data_json.get('type')
+            if message_type == 'request_room_list':
+                await self.send_room_list()
+        except json.JSONDecodeError:
+            await self.send(text_data=json.dumps({
+                'type': 'error',
+                'message': 'Invalid JSON'
+            }))
 
     async def room_update(self, event):
         await self.send(text_data=json.dumps({
@@ -44,7 +53,10 @@ class RoomConsumer(AsyncWebsocketConsumer):
 
     @database_sync_to_async
     def fetch_rooms(self):
-        return Room.get_room_list()  
+        return list(Room.objects.filter(is_active=True).values(
+            'room_id', 'name', 'owner__username', 'topic', 'difficulty',
+            'time_limit', 'capacity', 'participant_count', 'visibility', 'status'
+        ))
 
     async def send_room_list(self):
         rooms = await self.fetch_rooms()
@@ -60,5 +72,6 @@ class RoomConsumer(AsyncWebsocketConsumer):
             validated_token = jwt_auth.get_validated_token(token)
             user = jwt_auth.get_user(validated_token)
             return user
-        except AuthenticationFailed:
+        except AuthenticationFailed as e:
+            print(f"Authentication failed: {str(e)}")
             return None
