@@ -1,18 +1,17 @@
-# your_project_name/asgi.py
 
 import os
 from django.core.asgi import get_asgi_application
 from channels.routing import ProtocolTypeRouter, URLRouter
 from channels.auth import AuthMiddlewareStack
-import bitWar_backend.routing 
+import room.routing 
 
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'your_project_name.settings')
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'bitWar_backend.settings')
 
 application = ProtocolTypeRouter({
     "http": get_asgi_application(),
     "websocket": AuthMiddlewareStack(
         URLRouter(
-            bitWar_backend.routing.websocket_urlpatterns
+            room.routing.websocket_urlpatterns
         )
     ),
 })

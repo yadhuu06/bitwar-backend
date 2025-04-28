@@ -1,9 +1,14 @@
 from django.db import models
 from django.conf import settings
 from django.utils import timezone
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+from channels.layers import get_channel_layer
+from asgiref.sync import async_to_sync
 import uuid
 import random
 import string
+import json
 
 def generate_join_code():
     characters = string.ascii_uppercase + string.digits
@@ -25,8 +30,7 @@ class Room(models.Model):
     )
 
     room_id = models.UUIDField(unique=True, default=uuid.uuid4, editable=False, primary_key=True)
-    join_code = models.CharField(max_length=8, unique=True, default=generate_join_code, editable=False)  # Updated to 8
-
+    join_code = models.CharField(max_length=8, unique=True, default=generate_join_code, editable=False)
     name = models.CharField(max_length=100, null=False, blank=False)
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='owned_rooms')
     topic = models.CharField(max_length=50, null=False, blank=False)
@@ -90,7 +94,6 @@ class RoomParticipant(models.Model):
         related_name='room_participations'
     )
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='participant', null=False, blank=False)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='waiting', null=False, blank=False)
     ready = models.BooleanField(default=False, null=False)
@@ -114,3 +117,22 @@ class RoomParticipant(models.Model):
 
     def __str__(self):
         return f"{self.user.username} in {self.room.name} as {self.role} ({self.status})"
+
+
+@receiver(post_save, sender=Room)
+@receiver(post_save, sender=RoomParticipant)
+def broadcast_room_update(sender, instance, **kwargs):
+    channel_layer = get_channel_layer()
+    async_to_sync(channel_layer.group_send)(
+        'rooms',
+        {
+            'type': 'room_update',
+            'rooms': async_to_sync(get_room_list)()
+        }
+    )
+
+def get_room_list():
+    return list(Room.objects.filter(is_active=True).values(
+        'room_id', 'name', 'owner__username', 'topic', 'difficulty',
+        'time_limit', 'capacity', 'participant_count', 'visibility', 'status'
+    ))
