@@ -120,10 +120,13 @@ class RoomParticipant(models.Model):
 
 @sync_to_async
 def get_room_list():
-    return list(Room.objects.filter(is_active=True).values(
+    rooms = Room.objects.filter(is_active=True).values(
         'room_id', 'name', 'owner__username', 'topic', 'difficulty',
         'time_limit', 'capacity', 'participant_count', 'visibility', 'status'
-    ))
+    )
+    return [
+        {**room, 'room_id': str(room['room_id'])} for room in rooms
+    ]
 
 @receiver(post_save, sender=Room)
 @receiver(post_save, sender=RoomParticipant)
@@ -133,6 +136,6 @@ def broadcast_room_update(sender, instance, **kwargs):
         'rooms',
         {
             'type': 'room_update',
-            'rooms': get_room_list()
+            'rooms': async_to_sync(get_room_list)() 
         }
     )

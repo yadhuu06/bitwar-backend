@@ -31,9 +31,8 @@ def create_room(request):
         data = json.loads(request.body.decode('utf-8'))
         serializer = RoomCreateSerializer(data=data)
         if not serializer.is_valid():
-            print("serialiser is not valid")
+            print("Serializer is not valid:", serializer.errors)
             return Response({'error': 'Invalid input', 'details': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
-        print(" room Creating")
         validated_data = serializer.validated_data
         password = validated_data.get('password', '') if validated_data.get('visibility') != 'public' else ''
         print("my pass is ",password)
