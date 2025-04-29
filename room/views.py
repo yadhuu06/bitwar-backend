@@ -11,7 +11,7 @@ from django.db.models import F
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 import json
-
+import traceback
 @api_view(['GET'])
 def room_view(request):
     try:
@@ -19,6 +19,7 @@ def room_view(request):
             'room_id', 'name', 'owner__username', 'topic', 'difficulty',
             'time_limit', 'capacity', 'participant_count', 'visibility', 'status'
         )
+        print("1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111",rooms)
         return Response({'rooms': list(rooms)}, status=status.HTTP_200_OK)
     except Exception as e:
         return Response({'error': f'Failed to fetch rooms: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -30,29 +31,51 @@ def create_room(request):
         data = json.loads(request.body.decode('utf-8'))
         serializer = RoomCreateSerializer(data=data)
         if not serializer.is_valid():
+            print("serialiser is not valid")
             return Response({'error': 'Invalid input', 'details': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+        print(" room Creating")
+        validated_data = serializer.validated_data
+        password = validated_data.get('password', '') if validated_data.get('visibility') != 'public' else ''
+        print("my pass is ",password)
+        print("room creating ")
+        print("Authenticated User:", request.user)
+        print("Is Authenticated:", request.user.is_authenticated)
 
-        room = Room.objects.create(
-            name=serializer.validated_data['name'],
-            topic=serializer.validated_data['topic'],
-            difficulty=serializer.validated_data['difficulty'],
-            time_limit=serializer.validated_data['time_limit'],
-            capacity=serializer.validated_data.get('capacity', 2),
-            visibility=serializer.validated_data.get('visibility', 'public'),
-            password=serializer.validated_data.get('password', ''),
-            owner=request.user,
-        )
 
-        RoomParticipant.objects.create(
+        try:    room = Room.objects.create(
+                name=serializer.validated_data['name'],
+                topic=serializer.validated_data['topic'],
+                difficulty=serializer.validated_data['difficulty'],
+                time_limit=serializer.validated_data['time_limit'],
+                capacity=serializer.validated_data.get('capacity', 2),
+                visibility=serializer.validated_data.get('visibility', 'public'),
+                password=password,
+                owner=request.user,
+            )
+        except Exception as e:
+            print("Room creation failed:", str(e))
+            traceback.print_exc()
+            return Response({'error': 'Room creation failed', 'details': str(e)}, status=500)
+
+
+        try:
+            print("i am trying to create participant")
+            RoomParticipant.objects.create(
             room=room,
             user=request.user,
             role='host',
             status='joined',
             ready=False,
         )
+        except Exception as e:
+            print("participant creation failed")
+            traceback.print_exc()
+            print(f"room creation failed: {str(e)}")
+            return Response({'error': f'Failed to create participant: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         # Broadcast room creation via Channels
         channel_layer = get_channel_layer()
+        print("channel leyer",channel_layer)
         async_to_sync(channel_layer.group_send)(
             'rooms',
             {
@@ -71,6 +94,7 @@ def create_room(request):
                 }]
             }
         )
+        print("done")
 
         return Response({
             'message': 'Room created successfully',
@@ -83,6 +107,8 @@ def create_room(request):
         return Response({'error': 'Invalid JSON'}, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
         return Response({'error': f'Internal server error: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -108,7 +134,7 @@ def join_room_view(request, room_id):
         room.save()
         room.refresh_from_db()
 
-        # Broadcast updated room list
+
         channel_layer = get_channel_layer()
         async_to_sync(channel_layer.group_send)(
             'rooms',

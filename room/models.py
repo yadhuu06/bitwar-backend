@@ -4,7 +4,7 @@ from django.utils import timezone
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from channels.layers import get_channel_layer
-from asgiref.sync import async_to_sync
+from asgiref.sync import async_to_sync, sync_to_async
 import uuid
 import random
 import string
@@ -118,6 +118,12 @@ class RoomParticipant(models.Model):
     def __str__(self):
         return f"{self.user.username} in {self.room.name} as {self.role} ({self.status})"
 
+@sync_to_async
+def get_room_list():
+    return list(Room.objects.filter(is_active=True).values(
+        'room_id', 'name', 'owner__username', 'topic', 'difficulty',
+        'time_limit', 'capacity', 'participant_count', 'visibility', 'status'
+    ))
 
 @receiver(post_save, sender=Room)
 @receiver(post_save, sender=RoomParticipant)
@@ -127,12 +133,6 @@ def broadcast_room_update(sender, instance, **kwargs):
         'rooms',
         {
             'type': 'room_update',
-            'rooms': async_to_sync(get_room_list)()
+            'rooms': get_room_list()
         }
     )
-
-def get_room_list():
-    return list(Room.objects.filter(is_active=True).values(
-        'room_id', 'name', 'owner__username', 'topic', 'difficulty',
-        'time_limit', 'capacity', 'participant_count', 'visibility', 'status'
-    ))
