@@ -19,7 +19,6 @@ def room_view(request):
             'room_id', 'name', 'owner__username', 'topic', 'difficulty',
             'time_limit', 'capacity', 'participant_count', 'visibility', 'status'
         )
-        print("1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111",rooms)
         return Response({'rooms': list(rooms)}, status=status.HTTP_200_OK)
     except Exception as e:
         return Response({'error': f'Failed to fetch rooms: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -35,11 +34,6 @@ def create_room(request):
             return Response({'error': 'Invalid input', 'details': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
         validated_data = serializer.validated_data
         password = validated_data.get('password', '') if validated_data.get('visibility') != 'public' else ''
-        print("my pass is ",password)
-        print("room creating ")
-        print("Authenticated User:", request.user)
-        print("Is Authenticated:", request.user.is_authenticated)
-
 
         try:    room = Room.objects.create(
                 name=serializer.validated_data['name'],
@@ -72,9 +66,8 @@ def create_room(request):
             print(f"room creation failed: {str(e)}")
             return Response({'error': f'Failed to create participant: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-        # Broadcast room creation via Channels
         channel_layer = get_channel_layer()
-        print("channel leyer",channel_layer)
+
         async_to_sync(channel_layer.group_send)(
             'rooms',
             {
@@ -102,8 +95,7 @@ def create_room(request):
             'join_code': room.join_code,
             'owner': request.user.username,
         }, status=status.HTTP_201_CREATED)
-    except json.JSONDecodeError:
-        return Response({'error': 'Invalid JSON'}, status=status.HTTP_400_BAD_REQUEST)
+
     except Exception as e:
         return Response({'error': f'Internal server error: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -117,7 +109,7 @@ def join_room_view(request, room_id):
         if room.is_full():
             return Response({'error': 'Room is full'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Check if password is required for private rooms
+
         if room.visibility == 'private':
             password = request.data.get('password')
             if not password or room.password != password:

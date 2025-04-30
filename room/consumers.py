@@ -1,4 +1,3 @@
-
 import json
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
@@ -8,31 +7,32 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.exceptions import AuthenticationFailed
 
 class RoomConsumer(AsyncWebsocketConsumer):
-   async def connect(self):
-    query_string = self.scope['query_string'].decode()
-    token = None
-    for param in query_string.split('&'):
-        if param.startswith('token='):
-            token = param[len('token='):]
-            break
+    async def connect(self):
+        query_string = self.scope['query_string'].decode()
+        token = None
+        for param in query_string.split('&'):
+            if param.startswith('token='):
+                token = param[len('token='):]
+                break
 
-    print(f"WebSocket connect attempt with token: {token}")
-    if not token:
-        print("No token provided, closing connection")
-        await self.close(code=4001, reason="No token provided")
-        return
+        print(f"WebSocket connect attempt with token: {token}")
+        if not token:
+            print("No token provided, closing connection")
+            await self.close(code=4001, reason="No token provided")
+            return
 
-    user = await self.get_user_from_token(token)
-    if user is None or isinstance(user, AnonymousUser):
-        print("Invalid or expired token, closing connection")
-        await self.close(code=4002, reason="Invalid or expired token")
-        return
+        user = await self.get_user_from_token(token)
+        if user is None or isinstance(user, AnonymousUser):
+            print("Invalid or expired token, closing connection")
+            await self.close(code=4002, reason="Invalid or expired token")
+            return
 
-    print(f"Authenticated user: {user}")
-    self.scope['user'] = user
-    await self.channel_layer.group_add('rooms', self.channel_name)
-    await self.accept()
-    await self.send_room_list()
+        print(f"Authenticated user: {user}")
+        self.scope['user'] = user
+        await self.channel_layer.group_add('rooms', self.channel_name)
+        await self.accept()
+        await self.send_room_list()
+
     async def disconnect(self, close_code):
         if hasattr(self, 'channel_name'):
             await self.channel_layer.group_discard('rooms', self.channel_name)
@@ -78,3 +78,44 @@ class RoomConsumer(AsyncWebsocketConsumer):
         except AuthenticationFailed as e:
             print(f"Authentication failed: {str(e)}")
             return None
+
+
+class RoomInstanceConsumer(AsyncWebsocketConsumer):
+    async def connect(self):
+        self.room_id = self.scope['url_route']['kwargs']['room_id']
+        self.room_group_name = f'room_{self.room_id}'
+
+        await self.channel_layer.group_add(
+            self.room_group_name,
+            self.channel_name
+        )
+
+        await self.accept()
+
+    async def disconnect(self, close_code):
+        await self.channel_layer.group_discard(
+            self.room_group_name,
+            self.channel_name
+        )
+
+    async def receive(self, text_data):
+        data = json.loads(text_data)
+        message_type = data.get('type')
+
+        if message_type == 'ready':
+
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {
+                    'type': 'status_update',
+                    'user': self.scope["user"].username,
+                    'status': 'ready'
+                }
+            )
+
+    async def status_update(self, event):
+        await self.send(text_data=json.dumps({
+            'type': 'status_update',
+            'user': event['user'],
+            'status': event['status']
+        }))
