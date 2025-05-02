@@ -17,9 +17,9 @@ def room_view(request):
     try:
         rooms = Room.objects.filter(is_active=True).values(
             'room_id', 'name', 'owner__username', 'topic', 'difficulty',
-            'time_limit', 'capacity', 'participant_count', 'visibility', 'status'
+            'time_limit', 'capacity', 'participant_count', 'visibility', 'status','join_code'
         )
-        print("1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111",rooms)
+        
         return Response({'rooms': list(rooms)}, status=status.HTTP_200_OK)
     except Exception as e:
         return Response({'error': f'Failed to fetch rooms: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -129,7 +129,7 @@ def join_room_view(request, room_id):
             defaults={'role': 'participant', 'status': 'joined'}
         )
 
-        room.participant_count = F('participantLeakage count') + 1
+        room.participant_count = F('participant_count') + 1
         room.save()
         room.refresh_from_db()
 
