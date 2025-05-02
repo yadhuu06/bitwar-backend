@@ -4,7 +4,7 @@ from channels.db import database_sync_to_async
 from django.contrib.auth.models import AnonymousUser
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.exceptions import AuthenticationFailed
-from .models import Room
+from .models import Room, RoomParticipant
 
 class RoomConsumer(AsyncWebsocketConsumer):
     async def connect(self):
@@ -30,7 +30,7 @@ class RoomConsumer(AsyncWebsocketConsumer):
 
         print(f"Authenticated user: {user}")
         self.scope['user'] = user
-        self.user_authenticated = True  
+        self.user_authenticated = True
         print(f"Adding to group 'rooms' with channel: {self.channel_name}")
         await self.channel_layer.group_add('rooms', self.channel_name)
         print("Accepting WebSocket connection")
@@ -49,7 +49,6 @@ class RoomConsumer(AsyncWebsocketConsumer):
             await self.channel_layer.group_discard('rooms', self.channel_name)
 
     async def receive(self, text_data):
-  
         try:
             text_data_json = json.loads(text_data)
             message_type = text_data_json.get('type')
@@ -80,17 +79,28 @@ class RoomConsumer(AsyncWebsocketConsumer):
         try:
             print("Fetching room list")
             rooms = await database_sync_to_async(list)(
-                Room.objects.filter(is_active=True).values(
+                Room.objects.filter(is_active=True).prefetch_related('roomparticipant_set').values(
                     'room_id', 'name', 'owner__username', 'topic', 'difficulty',
-                    'time_limit', 'capacity', 'participant_count', 'visibility', 'status'
+                    'time_limit', 'capacity', 'participant_count', 'visibility', 'status', 'join_code'
                 )
             )
             print(f"Raw rooms data: {rooms}")
-            rooms = [{**room, 'room_id': str(room['room_id'])} for room in rooms]
-            print(f"Processed rooms data: {rooms}")
+            processed_rooms = []
+            for room in rooms:
+                participants = await database_sync_to_async(list)(
+                    RoomParticipant.objects.filter(room_id=room['room_id']).values(
+                        'user__username', 'role', 'status'
+                    )
+                )
+                processed_rooms.append({
+                    **room,
+                    'room_id': str(room['room_id']),
+                    'participants': participants
+                })
+            print(f"Processed rooms data: {processed_rooms}")
             await self.send(text_data=json.dumps({
                 'type': 'room_list',
-                'rooms': rooms
+                'rooms': processed_rooms
             }))
         except Exception as e:
             print(f"Error in send_room_list: {str(e)}")
@@ -104,7 +114,6 @@ class RoomConsumer(AsyncWebsocketConsumer):
             validated_token = jwt_auth.get_validated_token(token)
             print(f"Validated token: {validated_token}")
             user = jwt_auth.get_user(validated_token)
-            # print(f"Authenticated user: {user}")
             return user
         except AuthenticationFailed as e:
             print(f"Authentication failed: {str(e)}")

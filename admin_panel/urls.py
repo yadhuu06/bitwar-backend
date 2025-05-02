@@ -1,8 +1,9 @@
 from django.urls import path
-from .views import users_list,toggle_block_user,admin_login
+from .views import UsersListView, ToggleBlockUserView, AdminLoginView, RoomListView
 
 urlpatterns = [
- path('users_list/', users_list, name='users_list'),
- path('users/toggle-block/', toggle_block_user, name='toggle_block_user'),
- path('', admin_login, name='admin_login'),
+    path('', AdminLoginView.as_view(), name='admin_login'),
+    path('users/toggle-block/', ToggleBlockUserView.as_view(), name='toggle_block_user'),
+    path('users_list/', UsersListView.as_view(), name='users_list'),
+    path('battles/', RoomListView.as_view(), name='battle-list'),
 ]
