@@ -100,6 +100,9 @@ class RoomParticipant(models.Model):
     ready_at = models.DateTimeField(null=True, blank=True)
     joined_at = models.DateTimeField(auto_now_add=True)
     left_at = models.DateTimeField(null=True, blank=True)
+    blocked = models.BooleanField(default=False)
+
+
 
     class Meta:
         unique_together = ('room', 'user')
