@@ -17,8 +17,9 @@ def room_view(request):
     try:
         rooms = Room.objects.filter(is_active=True).values(
             'room_id', 'name', 'owner__username', 'topic', 'difficulty',
-            'time_limit', 'capacity', 'participant_count', 'visibility', 'status'
+            'time_limit', 'capacity', 'participant_count', 'visibility', 'status','join_code'
         )
+        
         return Response({'rooms': list(rooms)}, status=status.HTTP_200_OK)
     except Exception as e:
         return Response({'error': f'Failed to fetch rooms: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -100,32 +101,62 @@ def create_room(request):
         return Response({'error': f'Internal server error: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def join_room_view(request, room_id):
     try:
-        room = Room.objects.get(room_id=room_id)
+        # Fetch room
+        room = Room.objects.select_related('owner').get(room_id=room_id)
+
+
+        # Check if user already a participant
+        participant = RoomParticipant.objects.filter(room=room, user=request.user).first()
+
+        if participant:
+            if participant.blocked:
+                return Response({'status': 'blocked', 'message': 'User is blocked from this room'}, status=status.HTTP_403_FORBIDDEN)
+
+            return Response({
+                'status': 'success',
+                'message': 'Already joined',
+                'role': participant.role,
+                'room': {
+                    'room_id': str(room.room_id),
+                    'name': room.name,
+                    'owner': room.owner.username,
+                    'topic': room.topic,
+                    'difficulty': room.difficulty,
+                    'time_limit': room.time_limit,
+                    'capacity': room.capacity,
+                    'participant_count': room.participant_count,
+                    'visibility': room.visibility,
+                    'status': room.status,
+                }
+            }, status=status.HTTP_200_OK)
+
+        # Check if room is full
         if room.is_full():
             return Response({'error': 'Room is full'}, status=status.HTTP_400_BAD_REQUEST)
 
-
+        # Handle password if private room
         if room.visibility == 'private':
             password = request.data.get('password')
             if not password or room.password != password:
                 return Response({'error': 'Invalid password'}, status=status.HTTP_403_FORBIDDEN)
 
-        RoomParticipant.objects.get_or_create(
+        # Add participant
+        new_participant, created = RoomParticipant.objects.get_or_create(
             room=room,
             user=request.user,
             defaults={'role': 'participant', 'status': 'joined'}
         )
 
-        room.participant_count = F('participantLeakage count') + 1
-        room.save()
-        room.refresh_from_db()
+        if created:
+            room.participant_count = F('participant_count') + 1
+            room.save()
+            room.refresh_from_db()
 
-
+        # Notify via channels
         channel_layer = get_channel_layer()
         async_to_sync(channel_layer.group_send)(
             'rooms',
@@ -146,8 +177,26 @@ def join_room_view(request, room_id):
             }
         )
 
-        return Response({'status': 'success', 'message': 'Joined room'}, status=status.HTTP_200_OK)
+        return Response({
+            'status': 'success',
+            'message': 'Joined room',
+            'role': new_participant.role,
+            'room': {
+                'room_id': str(room.room_id),
+                'name': room.name,
+                'owner': room.owner.username,
+                'topic': room.topic,
+                'difficulty': room.difficulty,
+                'time_limit': room.time_limit,
+                'capacity': room.capacity,
+                'participant_count': room.participant_count,
+                'visibility': room.visibility,
+                'status': room.status,
+            }
+        }, status=status.HTTP_200_OK)
+
     except Room.DoesNotExist:
         return Response({'error': 'Room not found'}, status=status.HTTP_404_NOT_FOUND)
+
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

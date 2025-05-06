@@ -10,8 +10,7 @@ from django.conf import settings
 
 urlpatterns = [
     path('api/auth/', include('authentication.urls')),
-    path('api/auth/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
-    path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('api/auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('admin-panel/', include('admin_panel.urls')),
     path('rooms/', include('room.urls')),
 ]
