@@ -140,16 +140,19 @@ class VerifyOTPView(APIView):
 class RegisterCompleteView(APIView):
     throttle_classes = [OTPThrottle]
     permission_classes = [AllowAny]
-
     def post(self, request):
-        """Complete user registration after OTP verification."""
+        print("Incoming data:", request.data)
+
+        print("call came")
         email = request.data.get('email')
         if not email:
+            print("no email")
             return Response({'error': 'Email is required'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             otp_record = OTP.objects.get(email=email)
             if not otp_record.is_verified:
+                print("otp not there verified")
                 return Response({'error': 'Email verification not completed'}, status=status.HTTP_400_BAD_REQUEST)
         except OTP.DoesNotExist:
             return Response({'error': 'Email verification not found'}, status=status.HTTP_400_BAD_REQUEST)

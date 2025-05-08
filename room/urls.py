@@ -1,9 +1,10 @@
 from django.urls import path
-from .views import room_view,create_room,join_room_view
 from . import views
+
 urlpatterns = [
-    path('', room_view, name='room'),
-    path('create/', create_room, name='create_room'),
+    path('', views.room_view, name='room'),
+    path('create/', views.create_room, name='create_room'),
+    path('<uuid:room_id>/', views.get_room_details_view, name='get_room_details'),
     path('<uuid:room_id>/join/', views.join_room_view, name='join_room'),
-       
+    path('<uuid:room_id>/kick/', views.kick_participant_view, name='kick_participant'),
 ]
