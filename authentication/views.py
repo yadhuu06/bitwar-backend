@@ -189,6 +189,8 @@ def login_view(request):
     if user:
         if user.is_blocked:
             return Response({"error": "User IS Blocked By Admin"}, status=status.HTTP_401_UNAUTHORIZED)
+        user.last_login=timezone.now()
+        user.save()
         return Response(generate_auth_response(user), status=status.HTTP_200_OK)
     return Response({"error": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
 

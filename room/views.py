@@ -208,6 +208,7 @@ def join_room_view(request, room_id):
                     'difficulty': room.difficulty,
                     'time_limit': room.time_limit,
                     'capacity': room.capacity,
+                    
                     'participant_count': room.participant_count,
                     'visibility': room.visibility,
                     'status': room.status,

@@ -5,7 +5,7 @@ from django.contrib.auth.models import AnonymousUser
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.exceptions import AuthenticationFailed
 from .models import Room, RoomParticipant
-
+from django.utils import timezone
 class WebSocketAuthMixin:
     """Mixin for common WebSocket authentication logic."""
     
