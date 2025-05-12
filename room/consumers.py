@@ -114,6 +114,7 @@ class RoomLobbyConsumer(AsyncWebsocketConsumer, WebSocketAuthMixin):
 
 class RoomConsumer(AsyncWebsocketConsumer, WebSocketAuthMixin):
     async def connect(self):
+
         self.room_id = self.scope['url_route']['kwargs']['room_id']
         self.room_group_name = f'room_{self.room_id}'
 
@@ -121,10 +122,13 @@ class RoomConsumer(AsyncWebsocketConsumer, WebSocketAuthMixin):
         if user is None:
             return
 
-        self.scope['user'] = user
+        self.scope['user'] = user  
+        await self.update_participant_status('joined') 
+
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
         await self.accept()
         await self.send_participant_list()
+
 
     async def disconnect(self, close_code):
         if hasattr(self, 'scope') and 'user' in self.scope:
