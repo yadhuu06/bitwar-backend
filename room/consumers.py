@@ -6,8 +6,10 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.exceptions import AuthenticationFailed
 from .models import Room, RoomParticipant
 from django.utils import timezone
+
+
 class WebSocketAuthMixin:
-    """Mixin for common WebSocket authentication logic."""
+
     
     @database_sync_to_async
     def get_user_from_token(self, token):
@@ -137,20 +139,27 @@ class RoomConsumer(AsyncWebsocketConsumer, WebSocketAuthMixin):
             await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
 
     async def receive(self, text_data):
+        username = self.scope['user'].username if hasattr(self.scope['user'], 'username') else 'Anonymous'
+      
         try:
             text_data_json = json.loads(text_data)
             message_type = text_data_json.get('type')
+
             if message_type == 'request_participants':
                 await self.send_participant_list()
+
             elif message_type == 'chat_message':
+                message = text_data_json.get('message')
+                sender = self.scope['user'].username
+
                 await self.channel_layer.group_send(
                     self.room_group_name,
                     {
                         'type': 'chat_message',
-                        'message': text_data_json.get('message'),
-                        'sender': text_data_json.get('sender'),
+                        'message': message,
+                        'sender': sender,
                     }
-                )
+    )
         except json.JSONDecodeError:
             await self.send(text_data=json.dumps({
                 'type': 'error',
@@ -181,6 +190,7 @@ class RoomConsumer(AsyncWebsocketConsumer, WebSocketAuthMixin):
         return list(RoomParticipant.objects.filter(room_id=self.room_id).values(
             'user__username', 'role', 'status'
         ))
+
 
     @database_sync_to_async
     def update_participant_status(self, status):

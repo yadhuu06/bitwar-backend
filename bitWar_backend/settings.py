@@ -37,7 +37,9 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'authentication',
     'admin_panel',
+
     'channels',
+
     
 ]
 
