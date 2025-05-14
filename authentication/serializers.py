@@ -39,6 +39,9 @@ class OTPSerializer(serializers.ModelSerializer):
 
 
 
+from rest_framework import serializers
+from .models import CustomUser  
+
 class UserSerializer(serializers.ModelSerializer):
     profile_picture = serializers.ImageField(required=False, allow_null=True)
 
@@ -46,6 +49,13 @@ class UserSerializer(serializers.ModelSerializer):
         model = CustomUser
         fields = ['user_id', 'email', 'username', 'profile_picture', 'created_at', 'updated_at', 'auth_type', 'is_active']
         read_only_fields = ['user_id', 'email', 'created_at', 'updated_at', 'auth_type', 'is_active']
+
+    def validate_username(self, value):
+        # Only check if the username is changing
+        user = self.instance
+        if user.username != value and CustomUser.objects.filter(username=value).exists():
+            raise serializers.ValidationError("Username has already been taken")
+        return value
 
     def update(self, instance, validated_data):
         if 'profile_picture' in validated_data:

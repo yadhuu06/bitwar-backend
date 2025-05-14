@@ -19,7 +19,7 @@ def room_view(request):
     try:
         rooms = Room.objects.filter(is_active=True).values(
             'room_id', 'name', 'owner__username', 'topic', 'difficulty',
-            'time_limit', 'capacity', 'participant_count', 'visibility', 'status','join_code'
+            'time_limit', 'capacity', 'participant_count', 'visibility', 'status','join_code','is_ranked'
         )
         
         return Response({'rooms': list(rooms)}, status=status.HTTP_200_OK)
@@ -29,6 +29,7 @@ def room_view(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def create_room(request):
+    print("call coming !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
     try:
         data = json.loads(request.body.decode('utf-8'))
         serializer = RoomCreateSerializer(data=data)
@@ -42,9 +43,10 @@ def create_room(request):
                 name=serializer.validated_data['name'],
                 topic=serializer.validated_data['topic'],
                 difficulty=serializer.validated_data['difficulty'],
-                time_limit=serializer.validated_data['time_limit'],
+                time_limit=serializer.validated_data.get('time_limit',0),
                 capacity=serializer.validated_data.get('capacity', 2),
                 visibility=serializer.validated_data.get('visibility', 'public'),
+                is_ranked=serializer.validated_data.get('is_ranked', False),
                 password=password,
                 owner=request.user,
             )
@@ -86,6 +88,7 @@ def create_room(request):
                     'participant_count': room.participant_count,
                     'visibility': room.visibility,
                     'status': room.status,
+                    'is_ranked':room.is_ranked,
                 }]
             }
         )
@@ -97,6 +100,7 @@ def create_room(request):
             'room_name': room.name,
             'join_code': room.join_code,
             'owner': request.user.username,
+            'is_ranked':room.is_ranked
         }, status=status.HTTP_201_CREATED)
 
     except Exception as e:
@@ -124,6 +128,7 @@ def get_room_details_view(request, room_id):
                 'visibility': room.visibility,
                 'status': room.status,
                 'join_code': room.join_code,
+                'is_ranked':room.is_ranked
             },
             'participants': list(participants),
         }, status=status.HTTP_200_OK)
@@ -168,6 +173,7 @@ def join_room_view(request, room_id):
                     'visibility': room.visibility,
                     'status': room.status,
                     'join_code': room.join_code,
+                    'is_ranked':room.is_ranked
                 },
                 'participants': list(participants),
             }, status=status.HTTP_200_OK)

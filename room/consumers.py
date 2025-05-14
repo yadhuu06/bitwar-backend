@@ -90,14 +90,14 @@ class RoomLobbyConsumer(AsyncWebsocketConsumer, WebSocketAuthMixin):
             rooms = await database_sync_to_async(list)(
                 Room.objects.filter(is_active=True).prefetch_related('participants').values(
                     'room_id', 'name', 'owner__username', 'topic', 'difficulty',
-                    'time_limit', 'capacity', 'participant_count', 'visibility', 'status', 'join_code'
+                    'time_limit', 'capacity', 'participant_count', 'visibility', 'status', 'join_code','is_ranked'
                 )
             )
             processed_rooms = []
             for room in rooms:
                 participants = await database_sync_to_async(list)(
                     RoomParticipant.objects.filter(room_id=room['room_id']).values(
-                        'user__username', 'role', 'status'
+                        'user__username', 'role', 'status','is_ranked'
                     )
                 )
                 processed_rooms.append({
@@ -190,6 +190,33 @@ class RoomConsumer(AsyncWebsocketConsumer, WebSocketAuthMixin):
         return list(RoomParticipant.objects.filter(room_id=self.room_id).values(
             'user__username', 'role', 'status'
         ))
+    @database_sync_to_async
+    def is_host(self, user):
+        try:
+            participant = RoomParticipant.objects.get(room_id=self.room_id, user=user)
+            return participant.role == 'host'
+        except RoomParticipant.DoesNotExist:
+            return False
+    @database_sync_to_async
+    def kick_participant(self, target_username):
+        try:
+            participant = RoomParticipant.objects.get(
+                room_id=self.room_id,
+                user__username=target_username,
+                status='joined'
+            )
+            participant.status = 'kicked'
+            participant.left_at = timezone.now()
+            participant.blocked = True
+            participant.save()
+            room = Room.objects.get(room_id=self.room_id)
+            room.participant_count = RoomParticipant.objects.filter(
+                room_id=self.room_id, status='joined'
+            ).count()-1
+            room.save()
+            return True
+        except RoomParticipant.DoesNotExist:
+            return False
 
 
     @database_sync_to_async

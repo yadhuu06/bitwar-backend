@@ -36,6 +36,7 @@ class Room(models.Model):
     topic = models.CharField(max_length=50, null=False, blank=False)
     difficulty = models.CharField(max_length=10, choices=DIFFICULTY_LEVELS, null=False, blank=False)
     time_limit = models.PositiveIntegerField(help_text="Time limit in minutes", null=False, blank=False)
+    is_ranked = models.BooleanField(default=True, null=False)
     capacity = models.PositiveIntegerField(default=2, null=False, blank=False)
     participant_count = models.PositiveIntegerField(default=1, null=False, blank=False)
     visibility = models.CharField(max_length=10, choices=ROOM_VISIBILITY_CHOICES, default='public', null=False, blank=False)

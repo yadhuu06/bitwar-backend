@@ -7,7 +7,6 @@ from rest_framework_simplejwt.tokens import RefreshToken
 User = get_user_model()
 
 def get_username(strategy, details, user=None, *args, **kwargs):
-    """Generate a unique username from email."""
     if user:
         return {'username': user.username}
     email = details.get('email')
