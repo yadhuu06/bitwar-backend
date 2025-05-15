@@ -9,8 +9,6 @@ from django.utils import timezone
 
 
 class WebSocketAuthMixin:
-
-    
     @database_sync_to_async
     def get_user_from_token(self, token):
         try:
@@ -20,7 +18,8 @@ class WebSocketAuthMixin:
             return user
         except AuthenticationFailed:
             return None
-        except Exception:
+        except Exception as e:
+            print(f"[ERROR] Token validation failed: {str(e)}")
             return None
 
     async def authenticate_user(self, query_string):
@@ -41,7 +40,8 @@ class WebSocketAuthMixin:
 
         return user
 
-class RoomLobbyConsumer(AsyncWebsocketConsumer, WebSocketAuthMixin):
+
+class RoomConsumer(AsyncWebsocketConsumer, WebSocketAuthMixin):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.user_authenticated = False
@@ -52,6 +52,7 @@ class RoomLobbyConsumer(AsyncWebsocketConsumer, WebSocketAuthMixin):
             return
 
         self.scope['user'] = user
+        print(f"[CONNECT] User {user} connected to room list")
         self.user_authenticated = True
         await self.channel_layer.group_add('rooms', self.channel_name)
         await self.accept()
@@ -62,6 +63,7 @@ class RoomLobbyConsumer(AsyncWebsocketConsumer, WebSocketAuthMixin):
 
     async def disconnect(self, close_code):
         if hasattr(self, 'channel_name') and self.user_authenticated:
+            print(f"[DISCONNECT] User {self.scope.get('user')} disconnected from room list")
             await self.channel_layer.group_discard('rooms', self.channel_name)
 
     async def receive(self, text_data):
@@ -90,14 +92,14 @@ class RoomLobbyConsumer(AsyncWebsocketConsumer, WebSocketAuthMixin):
             rooms = await database_sync_to_async(list)(
                 Room.objects.filter(is_active=True).prefetch_related('participants').values(
                     'room_id', 'name', 'owner__username', 'topic', 'difficulty',
-                    'time_limit', 'capacity', 'participant_count', 'visibility', 'status', 'join_code','is_ranked'
+                    'time_limit', 'capacity', 'participant_count', 'visibility', 'status', 'is_ranked', 'join_code'
                 )
             )
             processed_rooms = []
             for room in rooms:
                 participants = await database_sync_to_async(list)(
                     RoomParticipant.objects.filter(room_id=room['room_id']).values(
-                        'user__username', 'role', 'status','is_ranked'
+                        'user__username', 'role', 'status', 'ready'
                     )
                 )
                 processed_rooms.append({
@@ -111,12 +113,12 @@ class RoomLobbyConsumer(AsyncWebsocketConsumer, WebSocketAuthMixin):
                 'rooms': processed_rooms
             }))
         except Exception as e:
-            print(f"Error in send_room_list: {str(e)}")
+            print(f"[ERROR] Error in send_room_list: {str(e)}")
             raise
 
-class RoomConsumer(AsyncWebsocketConsumer, WebSocketAuthMixin):
-    async def connect(self):
 
+class RoomLobbyConsumer(AsyncWebsocketConsumer, WebSocketAuthMixin):
+    async def connect(self):
         self.room_id = self.scope['url_route']['kwargs']['room_id']
         self.room_group_name = f'room_{self.room_id}'
 
@@ -124,23 +126,34 @@ class RoomConsumer(AsyncWebsocketConsumer, WebSocketAuthMixin):
         if user is None:
             return
 
-        self.scope['user'] = user  
-        await self.update_participant_status('joined') 
+        self.scope['user'] = user
+        print(f"[CONNECT] User {user} joined room {self.room_id}")
+
+        # Add or update participant record
+        await self.ensure_participant(user, 'joined')
 
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
         await self.accept()
         await self.send_participant_list()
 
-
     async def disconnect(self, close_code):
-        if hasattr(self, 'scope') and 'user' in self.scope:
-            await self.update_participant_status('left')
+        print(f"[DISCONNECT] User {self.scope.get('user')} left room {self.room_id}")
+        if hasattr(self, 'scope') and 'user' in self.scope and self.scope['user'].is_authenticated:
+            participants = await self.update_participant_status('left')
+            if participants:
+                await self.channel_layer.group_send(
+                    self.room_group_name,
+                    {
+                        'type': 'participant_update',
+                        'participants': participants,
+                    }
+                )
+                # Trigger room update to reflect participant_count
+                await self.trigger_room_update()
         if hasattr(self, 'channel_name'):
             await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
 
     async def receive(self, text_data):
-        username = self.scope['user'].username if hasattr(self.scope['user'], 'username') else 'Anonymous'
-      
         try:
             text_data_json = json.loads(text_data)
             message_type = text_data_json.get('type')
@@ -151,7 +164,6 @@ class RoomConsumer(AsyncWebsocketConsumer, WebSocketAuthMixin):
             elif message_type == 'chat_message':
                 message = text_data_json.get('message')
                 sender = self.scope['user'].username
-
                 await self.channel_layer.group_send(
                     self.room_group_name,
                     {
@@ -159,11 +171,77 @@ class RoomConsumer(AsyncWebsocketConsumer, WebSocketAuthMixin):
                         'message': message,
                         'sender': sender,
                     }
-    )
+                )
+
+            elif message_type == 'kick_participant':
+                if await self.is_host(self.scope['user']):
+                    target_username = text_data_json.get('username')
+                    success = await self.kick_participant(target_username)
+                    if success:
+                        participants = await self.get_participants()
+                        await self.channel_layer.group_send(
+                            self.room_group_name,
+                            {
+                                'type': 'participant_update',
+                                'participants': participants,
+                            }
+                        )
+
+                        await self.trigger_room_update()
+                    else:
+                        await self.send(text_data=json.dumps({
+                            'type': 'error',
+                            'message': f'Failed to kick {target_username}'
+                        }))
+                else:
+                    await self.send(text_data=json.dumps({
+                        'type': 'error',
+                        'message': 'Only the host can kick participants'
+                    }))
+
+            elif message_type == 'ready_toggle':
+                ready = text_data_json.get('ready', False)
+                await self.update_ready_status(ready)
+                await self.channel_layer.group_send(
+                    self.room_group_name,
+                    {
+                        'type': 'ready_status',
+                        'username': self.scope['user'].username,
+                        'ready': ready,
+                    }
+                )
+
+            elif message_type == 'start_countdown':
+                if await self.is_host(self.scope['user']):
+                    room = await self.get_room()
+                    if room.is_ranked:
+                        participants = await self.get_participants()
+                        non_host_participants = [p for p in participants if p['role'] != 'host']
+                        if not all(p['ready'] for p in non_host_participants):
+                            await self.send(text_data=json.dumps({
+                                'type': 'error',
+                                'message': 'All participants must be ready for ranked mode'
+                            }))
+                            return
+                    countdown = text_data_json.get('countdown', 5)
+                    await self.channel_layer.group_send(
+                        self.room_group_name,
+                        {
+                            'type': 'countdown',
+                            'countdown': countdown,
+                            'is_ranked': room.is_ranked,
+                        }
+                    )
+                else:
+                    await self.send(text_data=json.dumps({
+                        'type': 'error',
+                        'message': 'Only the host can start the countdown'
+                    }))
+
         except json.JSONDecodeError:
             await self.send(text_data=json.dumps({
                 'type': 'error',
-                'message': 'Invalid JSON'
+                'message': 'Invalid JSON format'
             }))
 
     async def chat_message(self, event):
@@ -185,11 +263,33 @@ class RoomConsumer(AsyncWebsocketConsumer, WebSocketAuthMixin):
             'participants': event['participants'],
         }))
 
+    async def ready_status(self, event):
+        await self.send(text_data=json.dumps({
+            'type': 'ready_status',
+            'username': event['username'],
+            'ready': event['ready'],
+        }))
+
+    async def countdown(self, event):
+        await self.send(text_data=json.dumps({
+            'type': 'countdown',
+            'countdown': event['countdown'],
+            'is_ranked': event['is_ranked'],
+        }))
+
     @database_sync_to_async
     def get_participants(self):
         return list(RoomParticipant.objects.filter(room_id=self.room_id).values(
-            'user__username', 'role', 'status'
+            'user__username', 'role', 'status', 'ready'
         ))
+
+    @database_sync_to_async
+    def get_room(self):
+        try:
+            return Room.objects.get(room_id=self.room_id)
+        except Room.DoesNotExist:
+            return None
+
     @database_sync_to_async
     def is_host(self, user):
         try:
@@ -197,6 +297,7 @@ class RoomConsumer(AsyncWebsocketConsumer, WebSocketAuthMixin):
             return participant.role == 'host'
         except RoomParticipant.DoesNotExist:
             return False
+
     @database_sync_to_async
     def kick_participant(self, target_username):
         try:
@@ -209,40 +310,104 @@ class RoomConsumer(AsyncWebsocketConsumer, WebSocketAuthMixin):
             participant.left_at = timezone.now()
             participant.blocked = True
             participant.save()
+
             room = Room.objects.get(room_id=self.room_id)
             room.participant_count = RoomParticipant.objects.filter(
                 room_id=self.room_id, status='joined'
-            ).count()-1
+            ).count()
             room.save()
+
             return True
         except RoomParticipant.DoesNotExist:
+            print(f"[ERROR] Cannot kick {target_username}: Participant not found")
             return False
 
+    @database_sync_to_async
+    def ensure_participant(self, user, status):
+        try:
+            participant, created = RoomParticipant.objects.get_or_create(
+                room_id=self.room_id,
+                user=user,
+                defaults={
+                    'role': 'host' if Room.objects.get(room_id=self.room_id).owner == user else 'participant',
+                    'status': status,
+                    'joined_at': timezone.now(),
+                    'ready': False,
+                }
+            )
+            if not created:
+                participant.status = status
+                participant.left_at = None if status == 'joined' else timezone.now()
+                participant.save()
+
+            room = Room.objects.get(room_id=self.room_id)
+            room.participant_count = RoomParticipant.objects.filter(
+                room_id=self.room_id, status='joined'
+            ).count()
+            room.save()
+
+            return participant
+        except Room.DoesNotExist:
+            print(f"[ERROR] Room {self.room_id} not found")
+            return None
+
+    async def update_participant_status(self, status):
+        try:
+            participant = await self.ensure_participant(self.scope['user'], status)
+            if not participant:
+                return None
+
+            participants = await self.get_participants()
+            print(f"[STATUS] {self.scope['user']} marked as {status} in room {self.room_id}")
+            return participants
+        except Exception as e:
+            print(f"[ERROR] Failed to update participant status: {str(e)}")
+            return await self.get_participants()
 
     @database_sync_to_async
-    def update_participant_status(self, status):
+    def update_ready_status(self, ready):
         try:
             participant = RoomParticipant.objects.get(room_id=self.room_id, user=self.scope['user'])
-            participant.status = status
-            participant.left_at = timezone.now()
+            participant.ready = ready
+            participant.ready_at = timezone.now() if ready else None
             participant.save()
-            participants = RoomParticipant.objects.filter(room_id=self.room_id).values('user__username', 'role', 'status')
-            return list(participants)
         except RoomParticipant.DoesNotExist:
-            return None
+            print(f"[ERROR] Participant {self.scope['user']} not found for ready status update")
 
     async def send_participant_list(self):
         try:
             participants = await self.get_participants()
+            room = await self.get_room()
             await self.channel_layer.group_send(
                 self.room_group_name,
                 {
                     'type': 'participant_list',
                     'participants': participants,
+                    'is_ranked': room.is_ranked if room else False,
                 }
             )
         except Exception as e:
+            print(f"[ERROR] Error sending participant list: {str(e)}")
             await self.send(text_data=json.dumps({
                 'type': 'error',
                 'message': f'Error sending participant list: {str(e)}'
             }))
+
+    async def trigger_room_update(self):
+        try:
+            rooms = await database_sync_to_async(list)(
+                Room.objects.filter(is_active=True).values(
+                    'room_id', 'name', 'owner__username', 'topic', 'difficulty',
+                    'time_limit', 'capacity', 'participant_count', 'visibility', 'status', 'is_ranked', 'join_code'
+                )
+            )
+            processed_rooms = [{**room, 'room_id': str(room['room_id'])} for room in rooms]
+            await self.channel_layer.group_send(
+                'rooms',
+                {
+                    'type': 'room_update',
+                    'rooms': processed_rooms,
+                }
+            )
+        except Exception as e:
+            print(f"[ERROR] Error triggering room update: {str(e)}")
