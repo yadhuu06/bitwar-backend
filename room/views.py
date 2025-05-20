@@ -150,7 +150,7 @@ def join_room_view(request, room_id):
             if participant.blocked:
                 return Response({'status': 'blocked', 'message': 'User is blocked from this room'}, status=status.HTTP_403_FORBIDDEN)
             participant.status = 'joined'
-            participant.left_at = None  # Optional: clear left time
+            participant.left_at = None 
             participant.save()
             print("User role:", participant.role)
             print("User status:", participant.status)

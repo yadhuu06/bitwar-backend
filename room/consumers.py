@@ -6,8 +6,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.exceptions import AuthenticationFailed
 from .models import Room, RoomParticipant
 from django.utils import timezone
-
-
+from django.db.models import Q
 class WebSocketAuthMixin:
     @database_sync_to_async
     def get_user_from_token(self, token):
@@ -28,7 +27,6 @@ class WebSocketAuthMixin:
             if param.startswith('token='):
                 token = param[len('token='):]
                 break
-
         if not token:
             await self.close(code=4001, reason="No token provided")
             return None
@@ -116,26 +114,38 @@ class RoomConsumer(AsyncWebsocketConsumer, WebSocketAuthMixin):
             print(f"[ERROR] Error in send_room_list: {str(e)}")
             raise
 
-
 class RoomLobbyConsumer(AsyncWebsocketConsumer, WebSocketAuthMixin):
     async def connect(self):
         self.room_id = self.scope['url_route']['kwargs']['room_id']
         self.room_group_name = f'room_{self.room_id}'
-
         user = await self.authenticate_user(self.scope['query_string'])
         if user is None:
             return
+        print("<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< USER :", user)
+        room = await self.get_room()
+        if not room:
+            await self.send(text_data=json.dumps({'type': 'error', 'message': 'Room not found'}))
+            await self.close(code=4005)
+            return
 
         self.scope['user'] = user
+        is_host = await self.is_host(user)
+        
+        if room.visibility == 'private' and not is_host:
+            is_allowed = await self.check_participant(user, self.room_id)
+            print("<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< Private and allowed :", is_allowed)
+            if not is_allowed:
+                await self.send(text_data=json.dumps({'type': 'error', 'message': 'Not authorized to join private room'}))
+                await self.close(code=4005)
+                return
+
         print(f"[CONNECT] User {user} joined room {self.room_id}")
-
-        # Add or update participant record
         await self.ensure_participant(user, 'joined')
-
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
         await self.accept()
         await self.send_participant_list()
 
+        
     async def disconnect(self, close_code):
         print(f"[DISCONNECT] User {self.scope.get('user')} left room {self.room_id}")
         if hasattr(self, 'scope') and 'user' in self.scope and self.scope['user'].is_authenticated:
@@ -148,7 +158,6 @@ class RoomLobbyConsumer(AsyncWebsocketConsumer, WebSocketAuthMixin):
                         'participants': participants,
                     }
                 )
-                # Trigger room update to reflect participant_count
                 await self.trigger_room_update()
         if hasattr(self, 'channel_name'):
             await self.channel_layer.group_discard(self.room_group_name, self.channel_name)
@@ -162,8 +171,11 @@ class RoomLobbyConsumer(AsyncWebsocketConsumer, WebSocketAuthMixin):
                 await self.send_participant_list()
 
             elif message_type == 'chat_message':
+                
                 message = text_data_json.get('message')
                 sender = self.scope['user'].username
+                print("the sender is : ",sender)
+                print("the message is ",message)
                 await self.channel_layer.group_send(
                     self.room_group_name,
                     {
@@ -251,6 +263,14 @@ class RoomLobbyConsumer(AsyncWebsocketConsumer, WebSocketAuthMixin):
             'sender': event['sender'],
         }))
 
+
+    @database_sync_to_async
+    def check_participant(self, user, room_id):
+        return RoomParticipant.objects.filter(
+            user=user,
+            room_id=room_id
+        ).exclude(status='kicked').exists()
+    
     async def participant_list(self, event):
         await self.send(text_data=json.dumps({
             'type': 'participant_list',
@@ -378,6 +398,10 @@ class RoomLobbyConsumer(AsyncWebsocketConsumer, WebSocketAuthMixin):
         try:
             participants = await self.get_participants()
             room = await self.get_room()
+            if not room:
+                await self.send(text_data=json.dumps({'type': 'error', 'message': 'Room not found'}))
+                return
+
             await self.channel_layer.group_send(
                 self.room_group_name,
                 {
