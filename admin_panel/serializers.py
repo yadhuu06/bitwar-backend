@@ -2,12 +2,13 @@ from rest_framework import serializers
 from authentication.models import CustomUser
 from room.models import Room, RoomParticipant
 from authentication.models import CustomUser
+
 class UserSerializer(serializers.ModelSerializer):
     id = serializers.UUIDField(source='user_id', read_only=True)
 
     class Meta:
         model = CustomUser
-        fields = ['id', 'username', 'email', 'is_blocked']
+        fields = ['id', 'username', 'email', 'is_blocked','created_at']
 class RoomParticipantSerializer(serializers.ModelSerializer):
     user__username = serializers.CharField(source='user.username', read_only=True)
 
