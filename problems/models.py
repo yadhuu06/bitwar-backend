@@ -52,3 +52,15 @@ class Example(models.Model):
 
     def __str__(self):
         return f"Example {self.order + 1} for {self.question.title}"
+class SolvedCode(models.Model):
+    question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name='solved_codes')
+    language = models.CharField(max_length=50) 
+    solution_code = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+class TestCase(models.Model):
+    question = models.ForeignKey(Question, on_delete=models.CASCADE, related_name='test_cases')
+    input_data = models.TextField()
+    expected_output = models.TextField()
+    is_sample = models.BooleanField(default=False)  
+    order = models.PositiveIntegerField(default=0)
