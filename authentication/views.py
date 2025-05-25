@@ -269,10 +269,14 @@ class GoogleLoginCallback(APIView):
         return Response(response_data, status=status.HTTP_200_OK)
 
 
-api_view(['POST'])
+
+logger = logging.getLogger(__name__)
+
+@csrf_exempt  # Exempt from CSRF protection
+@api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def logout_view(request):
-    print("data=",request.data)
+    print("data=", request.data)
 
     try:
         refresh_token = request.data.get('refresh_token')
@@ -291,9 +295,6 @@ def logout_view(request):
     except Exception as e:
         logger.error(f"Unexpected error during logout: {str(e)}")
         return Response({"error": "Logout failed"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    
-
-
 
 
 def user_dashboard_view(request):

@@ -13,7 +13,8 @@ urlpatterns = [
     path('api/auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('admin-panel/', include('admin_panel.urls')),
     path('rooms/', include('room.urls')),
-    path('proble,/',include('problems.urls')),
+    path('problems/', include('problems.urls')),
+
 ]
 
 if settings.DEBUG:

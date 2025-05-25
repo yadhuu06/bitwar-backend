@@ -1,6 +1,7 @@
 
 from django.db import models
 from django.contrib.auth import get_user_model
+import uuid
 
 User = get_user_model()
 
@@ -17,6 +18,8 @@ class Question(models.Model):
     ]
 
     title = models.CharField(max_length=255, unique=True, db_index=True)
+    question_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
+
     slug = models.SlugField(max_length=255, unique=True)
     description = models.TextField()  
     difficulty = models.CharField(max_length=10, choices=DIFFICULTY_CHOICES, db_index=True)

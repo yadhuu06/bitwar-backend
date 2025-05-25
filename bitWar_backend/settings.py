@@ -14,6 +14,9 @@ import os
 from pathlib import Path
 from datetime import timedelta
 from decouple import config
+import logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -34,6 +37,7 @@ INSTALLED_APPS = [
     'room',
     'rest_framework',
     'corsheaders',
+    'rest_framework_simplejwt.token_blacklist',
     'rest_framework_simplejwt',
     'authentication',
     'admin_panel',
@@ -49,6 +53,7 @@ CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:5173",
 
 ]
+logger.debug(f"CORS_ALLOWED_ORIGINS: {CORS_ALLOWED_ORIGINS}")
 
 CORS_ALLOW_CREDENTIALS = True
 
@@ -220,7 +225,7 @@ EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
 EMAIL_HOST_USER = 'bitcodeofficial01@gmail.com'
-EMAIL_HOST_PASSWORD = 'czma pmyz vitx szda'  # Consider using environment variables
+EMAIL_HOST_PASSWORD = 'czma pmyz vitx szda'  
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 
 # Redis Configuration
