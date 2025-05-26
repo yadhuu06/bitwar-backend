@@ -12,7 +12,7 @@ class Question(models.Model):
         ('HARD', 'Hard'),
     ]
     TAGS_CHOICES=[
-        ('Array','Array'),
+        ('ARRAY','Array'),
         ('STRING','String'),
         ('DSA','Dsa'),
     ]

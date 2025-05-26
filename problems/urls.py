@@ -1,9 +1,8 @@
 from django.urls import path
-from .views import QuestionCreateAPIView,QuestionsAPIView
+from .views import QuestionCreateAPIView, QuestionsAPIView
 
 urlpatterns = [
-    path('create/', QuestionCreateAPIView.as_view(), name='create_question'),
-    path('', QuestionsAPIView.as_view(), name='questions'),
-
-
+    path('questions/', QuestionsAPIView.as_view(), name='questions-list'),
+    path('questions/create/', QuestionCreateAPIView.as_view(), name='question-create'),
+    path('questions/edit/<uuid:question_id>/', QuestionCreateAPIView.as_view(), name='question-edit'),
 ]
