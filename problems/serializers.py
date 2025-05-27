@@ -18,13 +18,15 @@ class TestCaseSerializer(serializers.ModelSerializer):
         fields = ['id', 'input_data', 'expected_output', 'is_sample', 'order']
 
 class QuestionInitialCreateSerializer(serializers.ModelSerializer):
+    examples = ExampleSerializer(many=True, required=False)
+
     class Meta:
         model = Question
-        fields = ['title', 'description', 'difficulty', 'tags', 'question_id']
+        fields = ['title', 'description', 'difficulty', 'tags', 'question_id', 'examples']
         read_only_fields = ['question_id']
 
     def validate_tags(self, value):
-        valid_tags = [tag[0] for tag in Question.TAGS_CHOICES]  # ['ARRAY', 'STRING', 'DSA']
+        valid_tags = [tag[0] for tag in Question.TAGS_CHOICES]
         if value not in valid_tags:
             raise serializers.ValidationError(
                 f"Invalid tag. Must be one of {valid_tags}"
@@ -45,6 +47,7 @@ class QuestionInitialCreateSerializer(serializers.ModelSerializer):
         if not user:
             raise serializers.ValidationError("User must be authenticated to create a question")
         
+        examples_data = validated_data.pop('examples', [])
         base_slug = slugify(validated_data['title'])
         slug = base_slug
         counter = 1
@@ -53,7 +56,30 @@ class QuestionInitialCreateSerializer(serializers.ModelSerializer):
             counter += 1
         validated_data['slug'] = slug
         validated_data['created_by'] = user
-        return super().create(validated_data)
+        question = super().create(validated_data)
+        
+        for example_data in examples_data:
+            Example.objects.create(question=question, **example_data)
+        return question
+
+    def update(self, instance, validated_data):
+        examples_data = validated_data.pop('examples', None)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        base_slug = slugify(validated_data.get('title', instance.title))
+        slug = base_slug
+        counter = 1
+        while Question.objects.filter(slug=slug).exclude(id=instance.id).exists():
+            slug = f"{base_slug}-{counter}"
+            counter += 1
+        instance.slug = slug
+        instance.save()
+        
+        if examples_data is not None:
+            instance.examples.all().delete()
+            for example_data in examples_data:
+                Example.objects.create(question=instance, **example_data)
+        return instance
 
 class QuestionListSerializer(serializers.ModelSerializer):
     created_by = serializers.SlugRelatedField(slug_field='username', read_only=True)
@@ -64,7 +90,6 @@ class QuestionListSerializer(serializers.ModelSerializer):
 
     def to_representation(self, instance):
         representation = super().to_representation(instance)
-        # Map tag values to display names for frontend
         tag_display = dict(Question.TAGS_CHOICES).get(representation['tags'], representation['tags'])
         representation['tags'] = tag_display
         return representation

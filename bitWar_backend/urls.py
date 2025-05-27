@@ -13,12 +13,10 @@ urlpatterns = [
     path('api/auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('admin-panel/', include('admin_panel.urls')),
     path('rooms/', include('room.urls')),
-    path('problems/', include('problems.urls')),
+    path('questions/', include('problems.urls')),
 
 ]
 
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 
-if settings.DEBUG:
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
