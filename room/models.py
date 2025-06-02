@@ -143,3 +143,18 @@ def broadcast_room_update(sender, instance, **kwargs):
             'rooms': async_to_sync(get_room_list)() 
         }
     )
+
+
+class ChatMessage(models.Model):
+    room_id = models.CharField(max_length=50)
+    sender = models.CharField(max_length=100)
+    message = models.TextField()
+    timestamp = models.DateTimeField(auto_now_add=True)
+    is_system = models.BooleanField(default=False)
+
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['room_id', 'timestamp']),
+        ]
+        ordering = ['timestamp']

@@ -4,9 +4,10 @@ from channels.db import database_sync_to_async
 from django.contrib.auth.models import AnonymousUser
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.exceptions import AuthenticationFailed
-from .models import Room, RoomParticipant
+from .models import Room, RoomParticipant, ChatMessage
 from django.utils import timezone
 from django.db.models import Q
+
 class WebSocketAuthMixin:
     @database_sync_to_async
     def get_user_from_token(self, token):
@@ -37,7 +38,6 @@ class WebSocketAuthMixin:
             return None
 
         return user
-
 
 class RoomConsumer(AsyncWebsocketConsumer, WebSocketAuthMixin):
     def __init__(self, *args, **kwargs):
@@ -121,7 +121,6 @@ class RoomLobbyConsumer(AsyncWebsocketConsumer, WebSocketAuthMixin):
         user = await self.authenticate_user(self.scope['query_string'])
         if user is None:
             return
-        print("<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< USER :", user)
         room = await self.get_room()
         if not room:
             await self.send(text_data=json.dumps({'type': 'error', 'message': 'Room not found'}))
@@ -133,7 +132,6 @@ class RoomLobbyConsumer(AsyncWebsocketConsumer, WebSocketAuthMixin):
         
         if room.visibility == 'private' and not is_host:
             is_allowed = await self.check_participant(user, self.room_id)
-            print("<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<< Private and allowed :", is_allowed)
             if not is_allowed:
                 await self.send(text_data=json.dumps({'type': 'error', 'message': 'Not authorized to join private room'}))
                 await self.close(code=4005)
@@ -143,9 +141,25 @@ class RoomLobbyConsumer(AsyncWebsocketConsumer, WebSocketAuthMixin):
         await self.ensure_participant(user, 'joined')
         await self.channel_layer.group_add(self.room_group_name, self.channel_name)
         await self.accept()
+        # Send system message for user joining
+        await self.save_chat_message(
+            message=f"{user.username} joined the lobby",
+            sender="System",
+            is_system=True
+        )
+        await self.channel_layer.group_send(
+            self.room_group_name,
+            {
+                'type': 'chat_message',
+                'message': f"{user.username} joined the lobby",
+                'sender': 'System',
+                'timestamp': timezone.now().strftime('%I:%M %p'),
+                'is_system': True,
+            }
+        )
         await self.send_participant_list()
+        await self.send_chat_history()
 
-        
     async def disconnect(self, close_code):
         print(f"[DISCONNECT] User {self.scope.get('user')} left room {self.room_id}")
         if hasattr(self, 'scope') and 'user' in self.scope and self.scope['user'].is_authenticated:
@@ -157,6 +171,28 @@ class RoomLobbyConsumer(AsyncWebsocketConsumer, WebSocketAuthMixin):
                         'type': 'participant_update',
                         'participants': participants,
                     }
+                )
+                await self.channel_layer.group_send(
+                    self.room_group_name,
+                    {
+                        'type': 'chat_message',
+                        'message': f"{self.scope['user'].username} left the lobby",
+                        'sender': 'System',
+                        'timestamp': timezone.now().strftime('%I:%M %p'),
+                        'is_system': True,
+                    }
+                )
+                await self.channel_layer.group_send(
+                    self.room_group_name,
+                    {
+                        'type': 'participant_left',
+                        'username': self.scope['user'].username,
+                    }
+                )
+                await self.save_chat_message(
+                    message=f"{self.scope['user'].username} left the lobby",
+                    sender='System',
+                    is_system=True
                 )
                 await self.trigger_room_update()
         if hasattr(self, 'channel_name'):
@@ -171,17 +207,23 @@ class RoomLobbyConsumer(AsyncWebsocketConsumer, WebSocketAuthMixin):
                 await self.send_participant_list()
 
             elif message_type == 'chat_message':
-                
                 message = text_data_json.get('message')
-                sender = self.scope['user'].username
-                print("the sender is : ",sender)
-                print("the message is ",message)
+                sender = text_data_json.get('sender', self.scope['user'].username)
+                if not message.strip():
+                    await self.send(text_data=json.dumps({
+                        'type': 'error',
+                        'message': 'Message cannot be empty'
+                    }))
+                    return
+                await self.save_chat_message(message=message, sender=sender, is_system=False)
                 await self.channel_layer.group_send(
                     self.room_group_name,
                     {
                         'type': 'chat_message',
                         'message': message,
                         'sender': sender,
+                        'timestamp': timezone.now().strftime('%I:%M %p'),
+                        'is_system': False,
                     }
                 )
 
@@ -198,7 +240,28 @@ class RoomLobbyConsumer(AsyncWebsocketConsumer, WebSocketAuthMixin):
                                 'participants': participants,
                             }
                         )
-
+                        await self.channel_layer.group_send(
+                            self.room_group_name,
+                            {
+                                'type': 'kicked',
+                                'username': target_username,
+                            }
+                        )
+                        await self.channel_layer.group_send(
+                            self.room_group_name,
+                            {
+                                'type': 'chat_message',
+                                'message': f"{target_username} has been kicked",
+                                'sender': 'System',
+                                'timestamp': timezone.now().strftime('%I:%M %p'),
+                                'is_system': True,
+                            }
+                        )
+                        await self.save_chat_message(
+                            message=f"{target_username} has been kicked",
+                            sender='System',
+                            is_system=True
+                        )
                         await self.trigger_room_update()
                     else:
                         await self.send(text_data=json.dumps({
@@ -250,6 +313,72 @@ class RoomLobbyConsumer(AsyncWebsocketConsumer, WebSocketAuthMixin):
                         'message': 'Only the host can start the countdown'
                     }))
 
+            elif message_type == 'close_room':
+                if await self.is_host(self.scope['user']):
+                    await self.close_room()
+                    await self.channel_layer.group_send(
+                        self.room_group_name,
+                        {
+                            'type': 'chat_message',
+                            'message': 'Room closed. Chat cleared.',
+                            'sender': 'System',
+                            'timestamp': timezone.now().strftime('%I:%M %p'),
+                            'is_system': True,
+                        }
+                    )
+                    await self.save_chat_message(
+                        message='Room closed. Chat cleared.',
+                        sender='System',
+                        is_system=True
+                    )
+                    await self.channel_layer.group_send(
+                        self.room_group_name,
+                        {
+                            'type': 'room_closed',
+                        }
+                    )
+                    await self.clear_chat_messages()
+                    await self.trigger_room_update()
+                else:
+                    await self.send(text_data=json.dumps({
+                        'type': 'error',
+                        'message': 'Only the host can close the room'
+                    }))
+
+            elif message_type == 'leave_room':
+                participants = await self.update_participant_status('left')
+                if participants:
+                    await self.channel_layer.group_send(
+                        self.room_group_name,
+                        {
+                            'type': 'participant_update',
+                            'participants': participants,
+                        }
+                    )
+                    await self.channel_layer.group_send(
+                        self.room_group_name,
+                        {
+                            'type': 'participant_left',
+                            'username': self.scope['user'].username,
+                        }
+                    )
+                    await self.channel_layer.group_send(
+                        self.room_group_name,
+                        {
+                            'type': 'chat_message',
+                            'message': f"{self.scope['user'].username} left the lobby",
+                            'sender': 'System',
+                            'timestamp': timezone.now().strftime('%I:%M %p'),
+                            'is_system': True,
+                        }
+                    )
+                    await self.save_chat_message(
+                        message=f"{self.scope['user'].username} left the lobby",
+                        sender='System',
+                        is_system=True
+                    )
+                    await self.trigger_room_update()
+
         except json.JSONDecodeError:
             await self.send(text_data=json.dumps({
                 'type': 'error',
@@ -261,20 +390,15 @@ class RoomLobbyConsumer(AsyncWebsocketConsumer, WebSocketAuthMixin):
             'type': 'chat_message',
             'message': event['message'],
             'sender': event['sender'],
+            'timestamp': event.get('timestamp', timezone.now().strftime('%I:%M %p')),
+            'is_system': event.get('is_system', False),
         }))
 
-
-    @database_sync_to_async
-    def check_participant(self, user, room_id):
-        return RoomParticipant.objects.filter(
-            user=user,
-            room_id=room_id
-        ).exclude(status='kicked').exists()
-    
     async def participant_list(self, event):
         await self.send(text_data=json.dumps({
             'type': 'participant_list',
             'participants': event['participants'],
+            'is_ranked': event['is_ranked'],
         }))
 
     async def participant_update(self, event):
@@ -296,6 +420,30 @@ class RoomLobbyConsumer(AsyncWebsocketConsumer, WebSocketAuthMixin):
             'countdown': event['countdown'],
             'is_ranked': event['is_ranked'],
         }))
+
+    async def kicked(self, event):
+        await self.send(text_data=json.dumps({
+            'type': 'kicked',
+            'username': event['username'],
+        }))
+
+    async def room_closed(self, event):
+        await self.send(text_data=json.dumps({
+            'type': 'room_closed',
+        }))
+
+    async def participant_left(self, event):
+        await self.send(text_data=json.dumps({
+            'type': 'participant_left',
+            'username': event['username'],
+        }))
+
+    @database_sync_to_async
+    def check_participant(self, user, room_id):
+        return RoomParticipant.objects.filter(
+            user=user,
+            room_id=room_id
+        ).exclude(status='kicked').exists()
 
     @database_sync_to_async
     def get_participants(self):
@@ -370,19 +518,18 @@ class RoomLobbyConsumer(AsyncWebsocketConsumer, WebSocketAuthMixin):
         except Room.DoesNotExist:
             print(f"[ERROR] Room {self.room_id} not found")
             return None
-
     async def update_participant_status(self, status):
         try:
             participant = await self.ensure_participant(self.scope['user'], status)
             if not participant:
                 return None
-
             participants = await self.get_participants()
             print(f"[STATUS] {self.scope['user']} marked as {status} in room {self.room_id}")
             return participants
         except Exception as e:
             print(f"[ERROR] Failed to update participant status: {str(e)}")
             return await self.get_participants()
+
 
     @database_sync_to_async
     def update_ready_status(self, ready):
@@ -393,6 +540,51 @@ class RoomLobbyConsumer(AsyncWebsocketConsumer, WebSocketAuthMixin):
             participant.save()
         except RoomParticipant.DoesNotExist:
             print(f"[ERROR] Participant {self.scope['user']} not found for ready status update")
+
+    @database_sync_to_async
+    def save_chat_message(self, message, sender,is_system=False):
+        try:
+            chat_message = ChatMessage.objects.create(
+                room_id=self.room_id,
+                sender=sender,
+                message=message,
+                is_system=is_system
+                
+            )
+            return chat_message
+        except Exception as e:
+            print(f"[ERROR] Failed to save chat message: {str(e)}")
+            return None
+
+    @database_sync_to_async
+    def clear_chat_messages(self):
+        try:
+            ChatMessage.objects.filter(room_id=self.room_id).delete()
+        except Exception as e:
+            print(f"[ERROR] Failed to clear chat messages: {str(e)}")
+
+    @database_sync_to_async
+    def get_chat_history(self):
+        try:
+            messages = ChatMessage.objects.filter(room_id=self.room_id).order_by('timestamp')[:100]
+            return [
+                {
+                    'message': msg.message,
+                    'sender': msg.sender,
+                    'timestamp': msg.timestamp.strftime('%I:%M %p'),
+                    'is_system': msg.is_system
+                } for msg in messages
+            ]
+        except Exception as e:
+            print(f"[ERROR] Failed to fetch chat history: {str(e)}")
+            return []
+
+    async def send_chat_history(self):
+        messages = await self.get_chat_history()
+        await self.send(text_data=json.dumps({
+            'type': 'chat_history',
+            'messages': messages
+        }))
 
     async def send_participant_list(self):
         try:
@@ -435,3 +627,13 @@ class RoomLobbyConsumer(AsyncWebsocketConsumer, WebSocketAuthMixin):
             )
         except Exception as e:
             print(f"[ERROR] Error triggering room update: {str(e)}")
+
+    @database_sync_to_async
+    def close_room(self):
+        try:
+            room = Room.objects.get(room_id=self.room_id)
+            room.is_active = False
+            room.status = 'closed'
+            room.save()
+        except Room.DoesNotExist:
+            print(f"[ERROR] Room {self.room_id} not found")
