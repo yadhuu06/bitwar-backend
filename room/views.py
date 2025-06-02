@@ -113,8 +113,18 @@ def create_room(request):
 @permission_classes([IsAuthenticated])
 def get_room_details_view(request, room_id):
     try:
+
         room = Room.objects.select_related('owner').get(room_id=room_id)
+
+        try:
+            participant = RoomParticipant.objects.get(room=room, user=request.user)
+            if participant.blocked:
+                return Response({'error': 'You are not authorised person'}, status=status.HTTP_403_FORBIDDEN)
+        except RoomParticipant.DoesNotExist:
+            return Response({'error': 'You are not authorised person'}, status=status.HTTP_403_FORBIDDEN)
+
         participants = RoomParticipant.objects.filter(room=room).values('user__username', 'role', 'status')
+
         return Response({
             'room': {
                 'room_id': str(room.room_id),
@@ -128,15 +138,16 @@ def get_room_details_view(request, room_id):
                 'visibility': room.visibility,
                 'status': room.status,
                 'join_code': room.join_code,
-                'is_ranked':room.is_ranked
+                'is_ranked': room.is_ranked
             },
             'participants': list(participants),
         }, status=status.HTTP_200_OK)
+
     except Room.DoesNotExist:
         return Response({'error': 'Room not found'}, status=status.HTTP_404_NOT_FOUND)
+
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
 
 
 @api_view(['POST'])
