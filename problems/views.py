@@ -146,3 +146,143 @@ class TestCaseRetrieveUpdateDestroyAPIView(APIView):
 
         test_case.delete()
         return Response({"message": "Test case deleted successfully"}, status=status.HTTP_204_NO_CONTENT)
+    
+
+from django.db import transaction
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from .models import Question, TestCase, SolvedCode
+import requests
+import re
+
+JUDGE0_URL = "http://localhost:2358/submissions?base64_encoded=false&wait=true"
+
+LANGUAGE_MAP = {
+    "python": 71,
+    "cpp": 54,
+    "java": 62,
+    "javascript": 63,
+}
+
+class CodeVerifyAPIView(APIView):
+    def post(self, request, question_id):
+        code = request.data.get("code")
+        language = request.data.get("language")
+
+        if not code or not language:
+            return Response({"error": "Code or language required"}, status=400)
+        if language not in LANGUAGE_MAP:
+            return Response({"error": "Unsupported language"}, status=400)
+        
+        try:
+            question = Question.objects.get(question_id=question_id)
+        except Question.DoesNotExist:
+            return Response({"error": "Failed to find the question"}, status=404)
+        
+        testcases = question.test_cases.all()
+
+        if not testcases.exists():
+            return Response({"error": "No test cases available for the question"}, status=404)
+        
+        # Check for restricted main block in Python code
+        if language == "python":
+            if has_restricted_main_block(code):
+                return Response({"error": "Do not include 'if __name__ == \"__main__\":' block in your submission"}, status=400)
+        
+        all_passed = True
+        test_results = []
+
+        for test in testcases:
+            try:
+                submission_code = wrap_user_code(code, language)
+            except ValueError as e:
+                return Response({"error": "Code processing failed", "details": str(e)}, status=400)
+            
+            payload = {
+                "source_code": submission_code,
+                "language_id": LANGUAGE_MAP[language],
+                "stdin": test.input_data,
+            }
+            try:
+                print("Sending to Judge0:", payload)
+
+                response = requests.post(JUDGE0_URL, json=payload, timeout=15)
+                if response.status_code != 201:
+                    return Response({"error": "Judge0 error", "details": response.text}, status=500)
+                
+                result = response.json()
+                print("Received from Judge0:", result)
+
+                actual_output = (result.get("stdout") or "").strip()
+                expected_output = (test.expected_output or "").strip()
+                error_output = (result.get("stderr") or result.get("compile_output") or "").strip()
+                passed = actual_output == expected_output
+
+                if not passed:
+                    all_passed = False
+                
+                test_results.append({
+                    "test_case_id": test.id,
+                    "input": test.input_data,
+                    "expected": expected_output,
+                    "actual": actual_output,
+                    "error": error_output if error_output else None,
+                    "passed": passed,
+                })
+            except requests.RequestException as e:
+                return Response({"error": "Judge0 request failed", "details": str(e)}, status=500)
+        
+        solved_data = None
+        if all_passed:
+            with transaction.atomic():
+                solved = SolvedCode.objects.create(
+                    question=question,
+                    language=language,
+                    solution_code=code
+                )
+                question.is_validate = True  # Consider renaming to is_validated
+                question.save()
+                solved_data = {
+                    "id": solved.id,
+                    "language": solved.language,
+                    "created_at": solved.created_at,
+                }
+
+        return Response({
+            "message": "Verification completed.",
+            "all_passed": all_passed,
+            "results": test_results,
+            "solved_code": solved_data
+        }, status=200)
+
+def extract_function_name(code: str) -> str:
+    match = re.search(r'def\s+(\w+)\s*\(', code)  # For Python
+    if match:
+        return match.group(1)
+    match = re.search(r'function\s+(\w+)\s*\(', code)  # For JavaScript
+    if match:
+        return match.group(1)
+    raise ValueError("No function definition found in code")
+
+def has_restricted_main_block(code: str) -> bool:
+    pattern = r'if\s+__name__\s*==\s*[\'""]__main__[\'""]\s*:'
+    return bool(re.search(pattern, code))
+
+def wrap_user_code(code: str, language: str) -> str:
+    if language == "python":
+        fn = extract_function_name(code)
+        return f"""import ast\n{code}\n\nif __name__ == "__main__":\n    arr = ast.literal_eval(input())\n    print({fn}(arr))"""
+
+    elif language == "javascript":
+        fn = extract_function_name(code)
+        return f"""{code}\n\nconst readline = require('readline');\nconst rl = readline.createInterface({{\n  input: process.stdin,\n  output: process.stdout,\n}});\n\nrl.on('line', function(line) {{\n  const arr = JSON.parse(line);\n  console.log({fn}(arr));\n  rl.close();\n}});"""
+
+    elif language == "go":
+        fn = extract_function_name(code)
+        return f"""package main\n\nimport (\n\t"encoding/json"\n\t"fmt"\n\t"os"\n)\n\n{code}\n\nfunc main() {{\n\tvar arr []int\n\terr := json.NewDecoder(os.Stdin).Decode(&arr)\n\tif err != nil {{\n\t\tfmt.Println("Error:", err)\n\t\treturn\n\t}}\n\tfmt.Println({fn}(arr))\n}}"""
+
+    elif language in ["cpp", "java"]:
+        return code  # Assume user provides complete code for C++ and Java
+    else:
+        raise ValueError("Unsupported language")
