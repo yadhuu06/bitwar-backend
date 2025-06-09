@@ -26,6 +26,7 @@ class Question(models.Model):
     tags = models.CharField(choices=TAGS_CHOICES)  
     is_validate=models.BooleanField(default=False)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="created_questions")
+    is_contributed=models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -44,14 +45,7 @@ class Example(models.Model):
     input_example = models.TextField()
     output_example = models.TextField()
     explanation = models.TextField(blank=True, null=True)
-    order = models.PositiveIntegerField(default=0)
 
-    class Meta:
-        unique_together = ('question', 'order')
-        ordering = ['order']
-        indexes = [
-            models.Index(fields=['question', 'order']),
-        ]
 
     def __str__(self):
         return f"Example {self.order + 1} for {self.question.title}"

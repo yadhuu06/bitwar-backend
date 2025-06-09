@@ -57,6 +57,12 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     is_blocked = models.BooleanField(default=False)
     is_staff = models.BooleanField(default=False)
     is_superuser = models.BooleanField(default=False)
+    total_battles=models.IntegerField(default=0,null=True)
+    battles_won=models.IntegerField(default=0)
+    total_contributions =models.IntegerField(default=0)
+    accepted_contributions=models.IntegerField(default=0)
+
+
 
     objects = CustomUserManager()
 

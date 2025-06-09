@@ -5,7 +5,7 @@ from .models import Question, Example, SolvedCode, TestCase
 class ExampleSerializer(serializers.ModelSerializer):
     class Meta:
         model = Example
-        fields = ['id', 'input_example', 'output_example', 'explanation', 'order']
+        fields = ['id', 'input_example', 'output_example', 'explanation']
 
 class SolvedCodeSerializer(serializers.ModelSerializer):
     class Meta:
@@ -15,7 +15,7 @@ class SolvedCodeSerializer(serializers.ModelSerializer):
 class TestCaseSerializer(serializers.ModelSerializer):
     class Meta:
         model = TestCase
-        fields = ['id', 'input_data', 'expected_output', 'is_sample', 'order']
+        fields = ['id', 'input_data', 'expected_output', 'is_sample']
 
 class QuestionInitialCreateSerializer(serializers.ModelSerializer):
     examples = ExampleSerializer(many=True, required=False)
@@ -111,3 +111,10 @@ class QuestionListSerializer(serializers.ModelSerializer):
             'solved_codes',
             'test_cases',
         ]
+
+from .models import SolvedCode
+
+class SolvedCodeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SolvedCode
+        fields = ['id', 'language', 'solution_code', 'created_at']

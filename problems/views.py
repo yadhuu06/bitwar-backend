@@ -1,11 +1,21 @@
 from django.shortcuts import render
+from django.db import transaction
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
-from .models import Question, TestCase
-from .serializers import QuestionInitialCreateSerializer, QuestionListSerializer, TestCaseSerializer
 from rest_framework.pagination import PageNumberPagination
+
+from .models import Question, TestCase, SolvedCode
+from .serializers import (
+    QuestionInitialCreateSerializer,
+    QuestionListSerializer,
+    TestCaseSerializer
+)
+
+import requests
+import re
+
 
 class StandardResultsSetPagination(PageNumberPagination):
     page_size = 10
@@ -151,10 +161,10 @@ class TestCaseRetrieveUpdateDestroyAPIView(APIView):
 from django.db import transaction
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework import status
-from .models import Question, TestCase, SolvedCode
 import requests
 import re
+from .models import Question, SolvedCode
+from .serializers import SolvedCodeSerializer  # Added serializer import
 
 JUDGE0_URL = "http://localhost:2358/submissions?base64_encoded=false&wait=true"
 
@@ -178,14 +188,12 @@ class CodeVerifyAPIView(APIView):
         try:
             question = Question.objects.get(question_id=question_id)
         except Question.DoesNotExist:
-            return Response({"error": "Failed to find the question"}, status=404)
+            return Response({"error": "Question not found"}, status=404)
         
         testcases = question.test_cases.all()
-
         if not testcases.exists():
             return Response({"error": "No test cases available for the question"}, status=404)
         
-        # Check for restricted main block in Python code
         if language == "python":
             if has_restricted_main_block(code):
                 return Response({"error": "Do not include 'if __name__ == \"__main__\":' block in your submission"}, status=400)
@@ -205,15 +213,11 @@ class CodeVerifyAPIView(APIView):
                 "stdin": test.input_data,
             }
             try:
-                print("Sending to Judge0:", payload)
-
                 response = requests.post(JUDGE0_URL, json=payload, timeout=15)
                 if response.status_code != 201:
                     return Response({"error": "Judge0 error", "details": response.text}, status=500)
                 
                 result = response.json()
-                print("Received from Judge0:", result)
-
                 actual_output = (result.get("stdout") or "").strip()
                 expected_output = (test.expected_output or "").strip()
                 error_output = (result.get("stderr") or result.get("compile_output") or "").strip()
@@ -236,18 +240,16 @@ class CodeVerifyAPIView(APIView):
         solved_data = None
         if all_passed:
             with transaction.atomic():
+                SolvedCode.objects.filter(question=question, language=language).delete()
                 solved = SolvedCode.objects.create(
                     question=question,
                     language=language,
                     solution_code=code
                 )
-                question.is_validate = True  # Consider renaming to is_validated
+                question.is_validate = True
                 question.save()
-                solved_data = {
-                    "id": solved.id,
-                    "language": solved.language,
-                    "created_at": solved.created_at,
-                }
+                serializer = SolvedCodeSerializer(solved)
+                solved_data = serializer.data
 
         return Response({
             "message": "Verification completed.",
@@ -255,34 +257,73 @@ class CodeVerifyAPIView(APIView):
             "results": test_results,
             "solved_code": solved_data
         }, status=200)
+    
+    def get(self, request, question_id):
+        try:
+            question = Question.objects.get(question_id=question_id)
+        except Question.DoesNotExist:
+            return Response({"error": "Question not found"}, status=404)
+        
+        if request.path.endswith('solved-codes/'):
+            try:
+                solved_codes = SolvedCode.objects.filter(question=question)
+                solved_data = {
+                    code.language: SolvedCodeSerializer(code).data for code in solved_codes
+                }
+                return Response({"solved_codes": solved_data}, status=200)
+            except Exception as e:
+                return Response({"error": "Failed to fetch solved codes", "details": str(e)}, status=500)
+        
+        language = request.query_params.get("language")
+        if not language:
+            return Response({"error": "Language parameter required"}, status=400)
+        if language not in LANGUAGE_MAP:
+            return Response({"error": "Unsupported language"}, status=400)
+        
+        try:
+            solved = SolvedCode.objects.filter(question=question, language=language).first()
+            solved_data = SolvedCodeSerializer(solved).data if solved else None
+            return Response({"solved_code": solved_data}, status=200)
+        except Exception as e:
+            return Response({"error": "Failed to fetch solved code", "details": str(e)}, status=500)
 
 def extract_function_name(code: str) -> str:
-    match = re.search(r'def\s+(\w+)\s*\(', code)  # For Python
-    if match:
-        return match.group(1)
-    match = re.search(r'function\s+(\w+)\s*\(', code)  # For JavaScript
-    if match:
-        return match.group(1)
-    raise ValueError("No function definition found in code")
+    # Improved regex to handle more cases
+    patterns = [
+        r'def\s+(\w+)\s*\(',  # Python
+        r'function\s+(\w+)\s*\(',  # JavaScript
+        r'public\s+(?:static\s+)?(?:\w+\s+)?(\w+)\s*\(',  # Java
+        r'(?:int|void|double|float|char|string)\s+(\w+)\s*\(',  # C++
+    ]
+    
+    for pattern in patterns:
+        match = re.search(pattern, code)
+        if match:
+            return match.group(1)
+    
+    raise ValueError("No valid function definition found in code")
 
 def has_restricted_main_block(code: str) -> bool:
     pattern = r'if\s+__name__\s*==\s*[\'""]__main__[\'""]\s*:'
     return bool(re.search(pattern, code))
 
 def wrap_user_code(code: str, language: str) -> str:
-    if language == "python":
+    try:
         fn = extract_function_name(code)
-        return f"""import ast\n{code}\n\nif __name__ == "__main__":\n    arr = ast.literal_eval(input())\n    print({fn}(arr))"""
-
-    elif language == "javascript":
-        fn = extract_function_name(code)
-        return f"""{code}\n\nconst readline = require('readline');\nconst rl = readline.createInterface({{\n  input: process.stdin,\n  output: process.stdout,\n}});\n\nrl.on('line', function(line) {{\n  const arr = JSON.parse(line);\n  console.log({fn}(arr));\n  rl.close();\n}});"""
-
-    elif language == "go":
-        fn = extract_function_name(code)
-        return f"""package main\n\nimport (\n\t"encoding/json"\n\t"fmt"\n\t"os"\n)\n\n{code}\n\nfunc main() {{\n\tvar arr []int\n\terr := json.NewDecoder(os.Stdin).Decode(&arr)\n\tif err != nil {{\n\t\tfmt.Println("Error:", err)\n\t\treturn\n\t}}\n\tfmt.Println({fn}(arr))\n}}"""
-
-    elif language in ["cpp", "java"]:
-        return code  # Assume user provides complete code for C++ and Java
-    else:
-        raise ValueError("Unsupported language")
+        if language == "python":
+            return f"""import ast\n{code}\n\nif __name__ == "__main__":\n    arr = ast.literal_eval(input())\n    print({fn}(arr))"""
+        elif language == "javascript":
+            return f"""{code}\n\nconst readline = require('readline');\nconst rl = readline.createInterface({{\n  input: process.stdin,\n  output: process.stdout,\n}});\n\nrl.on('line', (line) => {{\n  const arr = JSON.parse(line);\n  console.log({fn}(arr));\n  rl.close();\n}});"""
+        elif language == "java":
+            # Ensure class name matches the main class
+            class_name = re.search(r'class\s+(\w+)', code)
+            if not class_name:
+                raise ValueError("No class definition found in Java code")
+            class_name = class_name.group(1)
+            return f"""{code}\n\npublic class Main {{\n    public static void main(String[] args) throws Exception {{\n        java.util.Scanner sc = new java.util.Scanner(System.in);\n        String input = sc.nextLine();\n        {class_name} solution = new {class_name}();\n        System.out.println(solution.{fn}(input));\n        sc.close();\n    }}\n}}"""
+        elif language == "cpp":
+            return f"""#include <iostream>\n#include <string>\n{code}\n\nint main() {{\n    std::string input;\n    std::getline(std::cin, input);\n    std::cout << {fn}(input) << std::endl;\n    return 0;\n}}"""
+        else:
+            raise ValueError("Unsupported language")
+    except Exception as e:
+        raise ValueError(f"Failed to wrap code: {str(e)}")
