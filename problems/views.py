@@ -1,21 +1,25 @@
-from django.shortcuts import render
-from django.db import transaction
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.pagination import PageNumberPagination
+import re
+import requests
 
+from django.db import transaction
+from django.shortcuts import render
+
+from rest_framework import status
+from rest_framework.pagination import PageNumberPagination
+from rest_framework.permissions import IsAuthenticated, IsAdminUser
+from rest_framework.response import Response
+from rest_framework.views import APIView
+
+from authentication.models import CustomUser
 from .models import Question, TestCase, SolvedCode
 from .serializers import (
     QuestionInitialCreateSerializer,
     QuestionListSerializer,
-    TestCaseSerializer
+    TestCaseSerializer,
+    SolvedCodeSerializer
 )
 
-import requests
-import re
-
+from . utils import extract_function_name,wrap_user_code,has_restricted_main_block
 
 class StandardResultsSetPagination(PageNumberPagination):
     page_size = 10
@@ -23,7 +27,7 @@ class StandardResultsSetPagination(PageNumberPagination):
     max_page_size = 100
 
 class QuestionCreateAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated,IsAdminUser]
 
     def post(self, request):
         print("Create question data:", request.data)
@@ -58,7 +62,7 @@ class QuestionCreateAPIView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class QuestionDetailAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsAdminUser]
 
     def get(self, request, question_id):
         try:
@@ -69,7 +73,7 @@ class QuestionDetailAPIView(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 class QuestionsAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated,IsAdminUser]
 
     def get(self, request):
         questions = Question.objects.all()
@@ -109,6 +113,7 @@ class TestCaseListCreateAPIView(APIView):
 
         serializer = TestCaseSerializer(data=request.data)
         if serializer.is_valid():
+            
             serializer.save(question=question)
             return Response({
                 "message": "Test case created successfully",
@@ -117,7 +122,7 @@ class TestCaseListCreateAPIView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class TestCaseRetrieveUpdateDestroyAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated ,IsAdminUser]
 
     def get(self, request, question_id, test_case_id):
         try:
@@ -158,13 +163,6 @@ class TestCaseRetrieveUpdateDestroyAPIView(APIView):
         return Response({"message": "Test case deleted successfully"}, status=status.HTTP_204_NO_CONTENT)
     
 
-from django.db import transaction
-from rest_framework.views import APIView
-from rest_framework.response import Response
-import requests
-import re
-from .models import Question, SolvedCode
-from .serializers import SolvedCodeSerializer  # Added serializer import
 
 JUDGE0_URL = "http://localhost:2358/submissions?base64_encoded=false&wait=true"
 
@@ -176,6 +174,8 @@ LANGUAGE_MAP = {
 }
 
 class CodeVerifyAPIView(APIView):
+    
+
     def post(self, request, question_id):
         code = request.data.get("code")
         language = request.data.get("language")
@@ -287,43 +287,66 @@ class CodeVerifyAPIView(APIView):
         except Exception as e:
             return Response({"error": "Failed to fetch solved code", "details": str(e)}, status=500)
 
-def extract_function_name(code: str) -> str:
-    # Improved regex to handle more cases
-    patterns = [
-        r'def\s+(\w+)\s*\(',  # Python
-        r'function\s+(\w+)\s*\(',  # JavaScript
-        r'public\s+(?:static\s+)?(?:\w+\s+)?(\w+)\s*\(',  # Java
-        r'(?:int|void|double|float|char|string)\s+(\w+)\s*\(',  # C++
-    ]
-    
-    for pattern in patterns:
-        match = re.search(pattern, code)
-        if match:
-            return match.group(1)
-    
-    raise ValueError("No valid function definition found in code")
 
-def has_restricted_main_block(code: str) -> bool:
-    pattern = r'if\s+__name__\s*==\s*[\'""]__main__[\'""]\s*:'
-    return bool(re.search(pattern, code))
 
-def wrap_user_code(code: str, language: str) -> str:
-    try:
-        fn = extract_function_name(code)
-        if language == "python":
-            return f"""import ast\n{code}\n\nif __name__ == "__main__":\n    arr = ast.literal_eval(input())\n    print({fn}(arr))"""
-        elif language == "javascript":
-            return f"""{code}\n\nconst readline = require('readline');\nconst rl = readline.createInterface({{\n  input: process.stdin,\n  output: process.stdout,\n}});\n\nrl.on('line', (line) => {{\n  const arr = JSON.parse(line);\n  console.log({fn}(arr));\n  rl.close();\n}});"""
-        elif language == "java":
-            # Ensure class name matches the main class
-            class_name = re.search(r'class\s+(\w+)', code)
-            if not class_name:
-                raise ValueError("No class definition found in Java code")
-            class_name = class_name.group(1)
-            return f"""{code}\n\npublic class Main {{\n    public static void main(String[] args) throws Exception {{\n        java.util.Scanner sc = new java.util.Scanner(System.in);\n        String input = sc.nextLine();\n        {class_name} solution = new {class_name}();\n        System.out.println(solution.{fn}(input));\n        sc.close();\n    }}\n}}"""
-        elif language == "cpp":
-            return f"""#include <iostream>\n#include <string>\n{code}\n\nint main() {{\n    std::string input;\n    std::getline(std::cin, input);\n    std::cout << {fn}(input) << std::endl;\n    return 0;\n}}"""
-        else:
-            raise ValueError("Unsupported language")
-    except Exception as e:
-        raise ValueError(f"Failed to wrap code: {str(e)}")
+
+
+class QuestionContributeAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @transaction.atomic
+    def post(self, request):
+        user = request.user
+        data = request.data.copy()
+        data['created_by'] = request.user
+        data['is_contributed'] = True
+
+        # Extract test cases
+        test_cases_data = data.pop('test_cases', [])
+
+        # Serialize and save the question
+        question_serializer = QuestionInitialCreateSerializer(data=data)
+        if question_serializer.is_valid():
+            print("question is valid")
+            question = question_serializer.save()
+            print("question",question)
+
+            for idx, tc_data in enumerate(test_cases_data):
+                tc_data['question'] = question.id
+                tc_data['order'] = tc_data.get('order', idx + 1)
+                serializer = TestCaseSerializer(data=tc_data)
+                if not serializer.is_valid():
+                    transaction.set_rollback(True)
+                    print("question is not valid")
+                    return Response({'errors': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+                serializer.save()
+
+            return Response({"message": "Question and test cases created", "question_id": str(question.id)}, status=status.HTTP_201_CREATED)
+
+        return Response({'errors': question_serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+class UserContributionsAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        try:
+            problems_submitted = Question.objects.filter(created_by=user, is_contributed=True).count()
+            solutions_accepted = SolvedCode.objects.filter(question__created_by=user, question__is_validate=True).count()
+            recent_contributions = Question.objects.filter(created_by=user, is_contributed=True).order_by('-created_at')[:3]
+            recent_data = [
+                {
+                    "title": q.title,
+                    "date": q.created_at.strftime("%Y-%m-%d"),
+                    "type": "Submitted Question"
+                } for q in recent_contributions
+            ]
+            return Response({
+                "problems_submitted": problems_submitted,
+                "solutions_accepted": solutions_accepted,
+                "recent_contributions": recent_data
+            }, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

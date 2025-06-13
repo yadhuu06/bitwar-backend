@@ -5,7 +5,7 @@ from .views import (
     TestCaseListCreateAPIView,
     CodeVerifyAPIView,
     TestCaseRetrieveUpdateDestroyAPIView,
-    QuestionDetailAPIView
+    QuestionDetailAPIView,QuestionContributeAPIView,UserContributionsAPIView
 )
 
 urlpatterns = [
@@ -17,4 +17,6 @@ urlpatterns = [
     path('<uuid:question_id>/test-cases/<int:test_case_id>/', TestCaseRetrieveUpdateDestroyAPIView.as_view(), name='test-case-detail'),
     path('<uuid:question_id>/verify/', CodeVerifyAPIView.as_view(), name='answer-verification'),
     path('<uuid:question_id>/solved-codes/', CodeVerifyAPIView.as_view(), name='solved-codes'),
-]
+    path('contribute/', QuestionContributeAPIView.as_view(), name='question-contribute'),
+    path('contributions/', UserContributionsAPIView.as_view(), name='user-contributions'),
+] 

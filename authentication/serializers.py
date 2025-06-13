@@ -42,24 +42,34 @@ class OTPSerializer(serializers.ModelSerializer):
 from rest_framework import serializers
 from .models import CustomUser  
 
+from django.conf import settings
+from rest_framework import serializers
+from .models import CustomUser
+
+from rest_framework import serializers
+from django.conf import settings
+
 class UserSerializer(serializers.ModelSerializer):
-    profile_picture = serializers.ImageField(required=False, allow_null=True)
+    profile_picture = serializers.SerializerMethodField()
 
     class Meta:
         model = CustomUser
-        fields = ['user_id', 'email', 'username', 'profile_picture', 'created_at', 'updated_at', 'auth_type', 'is_active']
-        read_only_fields = ['user_id', 'email', 'created_at', 'updated_at', 'auth_type', 'is_active']
+        fields = ['username', 'email', 'created_at', 'profile_picture', 'is_staff']
+
+    def get_profile_picture(self, obj):
+        if obj.profile_picture :
+            return f"{settings.MEDIA_URL}{obj.profile_picture.name}"
+        return f"{settings.MEDIA_URL}profile_pics/default/coding_hacker.png"
 
     def validate_username(self, value):
-        # Only check if the username is changing
         user = self.instance
-        if user.username != value and CustomUser.objects.filter(username=value).exists():
+        if user and user.username != value and CustomUser.objects.filter(username=value).exists():
             raise serializers.ValidationError("Username has already been taken")
         return value
 
     def update(self, instance, validated_data):
+        instance.username = validated_data.get('username', instance.username)
         if 'profile_picture' in validated_data:
             instance.profile_picture = validated_data['profile_picture']
-        instance.username = validated_data.get('username', instance.username)
         instance.save()
         return instance

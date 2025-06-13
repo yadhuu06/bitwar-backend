@@ -12,7 +12,13 @@ from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 import json
 import traceback
-
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from rest_framework import status
+from .models import Room
+from problems.models import Question
+import random
 
 @api_view(['GET'])
 def room_view(request):
@@ -41,8 +47,8 @@ def create_room(request):
 
         try:    room = Room.objects.create(
                 name=serializer.validated_data['name'],
-                topic=serializer.validated_data['topic'],
-                difficulty=serializer.validated_data['difficulty'],
+                topic=serializer.validated_data['topic'].upper(),
+                difficulty=serializer.validated_data['difficulty'].upper(),
                 time_limit=serializer.validated_data.get('time_limit',0),
                 capacity=serializer.validated_data.get('capacity', 2),
                 visibility=serializer.validated_data.get('visibility', 'public'),
@@ -113,7 +119,6 @@ def create_room(request):
 @permission_classes([IsAuthenticated])
 def get_room_details_view(request, room_id):
     try:
-
         room = Room.objects.select_related('owner').get(room_id=room_id)
 
         try:
@@ -123,9 +128,10 @@ def get_room_details_view(request, room_id):
         except RoomParticipant.DoesNotExist:
             return Response({'error': 'You are not authorised person'}, status=status.HTTP_403_FORBIDDEN)
 
-        participants = RoomParticipant.objects.filter(room=room).values('user__username', 'role', 'status')
+        participants = RoomParticipant.objects.filter(room=room).values('user__username', 'role', 'status', 'ready')
 
         return Response({
+            'current_user': request.user.username,
             'room': {
                 'room_id': str(room.room_id),
                 'name': room.name,
@@ -150,6 +156,7 @@ def get_room_details_view(request, room_id):
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def join_room_view(request, room_id):
@@ -160,16 +167,18 @@ def join_room_view(request, room_id):
         if participant:
             if participant.blocked:
                 return Response({'status': 'blocked', 'message': 'User is blocked from this room'}, status=status.HTTP_403_FORBIDDEN)
-            participant.status = 'joined'
+            participant.status = 'Online'
             participant.left_at = None 
             participant.save()
             print("User role:", participant.role)
             print("User status:", participant.status)
 
             participants = RoomParticipant.objects.filter(room=room).values('user__username', 'role', 'status')
+            print("passing the username",request.user.username)
             return Response({
                 'status': 'success',
                 'message': 'Already joined',
+                'current_user': request.user.username, 
                 'role': participant.role,
                 'room': {
                     'room_id': str(room.room_id),
@@ -179,12 +188,11 @@ def join_room_view(request, room_id):
                     'difficulty': room.difficulty,
                     'time_limit': room.time_limit,
                     'capacity': room.capacity,
-                    
                     'participant_count': room.participant_count,
                     'visibility': room.visibility,
                     'status': room.status,
                     'join_code': room.join_code,
-                    'is_ranked':room.is_ranked
+                    'is_ranked': room.is_ranked
                 },
                 'participants': list(participants),
             }, status=status.HTTP_200_OK)
@@ -240,6 +248,7 @@ def join_room_view(request, room_id):
         return Response({
             'status': 'success',
             'message': 'Joined room',
+            'current_user': request.user.username,  
             'role': new_participant.role,
             'room': {
                 'room_id': str(room.room_id),
@@ -260,6 +269,7 @@ def join_room_view(request, room_id):
         return Response({'error': 'Room not found'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -294,3 +304,27 @@ def kick_participant_view(request, room_id):
         return Response({'error': 'Room not found'}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+class RoomQuestionAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, room_id):
+        try:
+            room = Room.objects.get(id=room_id)
+        except Room.DoesNotExist:
+            return Response({"error": "Room not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        
+        questions = Question.objects.filter(tags=room.topic,difficulty=room.difficulty)
+
+        if not questions.exists():
+            return Response({"error": "No questions available"}, status=status.HTTP_404_NOT_FOUND)
+
+        question = random.choice(questions)
+        return Response({
+            "id": question.id,
+            "title": question.title,
+            "description": question.description,
+            "constraints": question.constraints,
+            "test_cases": [tc.to_dict() for tc in question.test_cases.all()]  
+        })

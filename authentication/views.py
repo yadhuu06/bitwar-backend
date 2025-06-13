@@ -33,7 +33,6 @@ class OTPThrottle(AnonRateThrottle):
     rate = '10/hour'
 
 def generate_auth_response(user):
-  
     refresh = RefreshToken.for_user(user)
     frontend_base_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:5173')
     redirect_path = '/user/dashboard' if not user.is_superuser else '/admin/dashboard'
@@ -41,6 +40,7 @@ def generate_auth_response(user):
         'refresh': str(refresh),
         'access': str(refresh.access_token),
         'role': 'admin' if user.is_superuser else 'user',
+        'username': user.username,  
         'redirect_url': redirect_path
     }
 

@@ -60,4 +60,4 @@ class TestCase(models.Model):
     input_data = models.TextField()
     expected_output = models.TextField()
     is_sample = models.BooleanField(default=False)  
-    order = models.PositiveIntegerField(default=0)
+    order = models.PositiveIntegerField(default=0,null=True)
