@@ -16,6 +16,11 @@ class Question(models.Model):
         ('STRING','String'),
         ('DSA','Dsa'),
     ]
+    CONTRIBUTION_STATUS_CHOICES = [
+        ('QUESTION_SUBMITTED', 'Question Submitted'),
+        ('TEST_CASES_SUBMITTED', 'Test Cases Submitted'),
+        ('CODE_SUBMITTED', 'Code Submitted'),
+        ('COMPLETED', 'Completed'),]
 
     title = models.CharField(max_length=255, unique=True, db_index=True)
     question_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
@@ -27,6 +32,13 @@ class Question(models.Model):
     is_validate=models.BooleanField(default=False)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="created_questions")
     is_contributed=models.BooleanField(default=False)
+    contribution_status = models.CharField(
+        max_length=20,
+        choices=CONTRIBUTION_STATUS_CHOICES,
+        default='QUESTION_SUBMITTED',
+        blank=True,
+        null=True
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

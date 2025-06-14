@@ -18,7 +18,7 @@ from .serializers import (
     TestCaseSerializer,
     SolvedCodeSerializer
 )
-
+import ast
 from . utils import extract_function_name,wrap_user_code,has_restricted_main_block
 
 class StandardResultsSetPagination(PageNumberPagination):
@@ -177,6 +177,7 @@ class CodeVerifyAPIView(APIView):
     
 
     def post(self, request, question_id):
+        print("data",request.data)
         code = request.data.get("code")
         language = request.data.get("language")
 
@@ -219,9 +220,17 @@ class CodeVerifyAPIView(APIView):
                 
                 result = response.json()
                 actual_output = (result.get("stdout") or "").strip()
+                print("actual out",actual_output)
                 expected_output = (test.expected_output or "").strip()
+                print("expected",expected_output)
                 error_output = (result.get("stderr") or result.get("compile_output") or "").strip()
-                passed = actual_output == expected_output
+                print("errorr",error_output)
+                try:
+                    actual_eval = ast.literal_eval(actual_output)
+                    expected_eval = ast.literal_eval(expected_output)
+                    passed = actual_eval == expected_eval
+                except Exception:
+                    passed = actual_output.strip() == expected_output.strip()
 
                 if not passed:
                     all_passed = False
@@ -298,34 +307,55 @@ class QuestionContributeAPIView(APIView):
     def post(self, request):
         user = request.user
         data = request.data.copy()
-        data['created_by'] = request.user
+        data['created_by'] = user.user_id
         data['is_contributed'] = True
 
-        # Extract test cases
-        test_cases_data = data.pop('test_cases', [])
-
-        # Serialize and save the question
-        question_serializer = QuestionInitialCreateSerializer(data=data)
+        question_serializer = QuestionInitialCreateSerializer(data=data, context={'request': request})
         if question_serializer.is_valid():
-            print("question is valid")
             question = question_serializer.save()
-            print("question",question)
-
-            for idx, tc_data in enumerate(test_cases_data):
-                tc_data['question'] = question.id
-                tc_data['order'] = tc_data.get('order', idx + 1)
-                serializer = TestCaseSerializer(data=tc_data)
-                if not serializer.is_valid():
-                    transaction.set_rollback(True)
-                    print("question is not valid")
-                    return Response({'errors': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
-                serializer.save()
-
-            return Response({"message": "Question and test cases created", "question_id": str(question.id)}, status=status.HTTP_201_CREATED)
-
+            question.contribution_status = 'QUESTION_SUBMITTED'
+            question.is_contributed=True
+            question.save()
+            return Response(
+                {"message": "Question created", "question_id": str(question.question_id)},
+                status=status.HTTP_201_CREATED
+            )
         return Response({'errors': question_serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+class ContributeTestCasesAPIView(APIView):
+    permission_classes = [IsAuthenticated]
 
+    @transaction.atomic
+    def post(self, request, question_id):
+        print("data", request.data)
+        print("questionID:", question_id)
+        try:
+            question = Question.objects.get(question_id=question_id, created_by=request.user, is_contributed=True)
+            print("question", question)
+        except Question.DoesNotExist:
+            print("no question found")
+            return Response({"error": "Question not found or not owned by user"}, status=status.HTTP_404_NOT_FOUND)
 
+        if question.contribution_status != 'QUESTION_SUBMITTED':
+            return Response({"error": "Question must be in 'QUESTION_SUBMITTED' status"}, status=status.HTTP_400_BAD_REQUEST)
+
+        test_cases_data = request.data.get('test_cases', [])
+        if not test_cases_data:
+            return Response({"error": "At least one test case is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        for idx, tc_data in enumerate(test_cases_data):
+            tc_data['order'] = tc_data.get('order', idx + 1)
+            serializer = TestCaseSerializer(data=tc_data)
+            if not serializer.is_valid():
+                return Response({'errors': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+
+            serializer.save(question=question)
+
+        question.contribution_status = 'TEST_CASES_SUBMITTED'
+        question.save()
+        return Response(
+            {"message": "Test cases submitted", "question_id": str(question.question_id)},
+            status=status.HTTP_201_CREATED
+        )
 
 class UserContributionsAPIView(APIView):
     permission_classes = [IsAuthenticated]
