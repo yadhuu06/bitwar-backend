@@ -255,7 +255,10 @@ class CodeVerifyAPIView(APIView):
                     language=language,
                     solution_code=code
                 )
-                question.is_validate = True
+                if question.is_contributed and request.user.is_superuser==False:
+                    question.is_validate = False
+                else:
+                    question.is_validate = True
                 question.save()
                 serializer = SolvedCodeSerializer(solved)
                 solved_data = serializer.data
@@ -295,6 +298,43 @@ class CodeVerifyAPIView(APIView):
             return Response({"solved_code": solved_data}, status=200)
         except Exception as e:
             return Response({"error": "Failed to fetch solved code", "details": str(e)}, status=500)
+        
+
+    def patch(self, request, question_id):
+        try:
+            question = Question.objects.get(question_id=question_id)
+            print("my question is ", question)
+        except Question.DoesNotExist:
+            print("question not found")
+            return Response({"error": "Question not found"}, status=status.HTTP_404_NOT_FOUND)
+        
+        if not question.is_validate:
+            return Response({"error": "Please verify the question first"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        new_status = request.data.get("status")
+        if not new_status:
+            return Response({"error": "No status provided"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        valid_statuses = [choice[0] for choice in Question.CONTRIBUTION_STATUS_CHOICES]
+        if new_status not in valid_statuses:
+            return Response({"error": f"Invalid status. Must be one of {valid_statuses}"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        question.contribution_status = new_status
+        question.save()
+        return Response({"message": "Status updated"}, status=status.HTTP_200_OK)
+        
+
+
+
+        new_status = request.data.get("status")
+        
+        if new_status:
+            question.contribution_status = new_status
+            question.save()
+            return Response({"message": "Status updated"}, status=status.HTTP_200_OK)
+        else:
+            return Response({"error": "No status provided"}, status=status.HTTP_400_BAD_REQUEST)
+
 
 
 

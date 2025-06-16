@@ -20,4 +20,7 @@ urlpatterns = [
     path('contribute/', QuestionContributeAPIView.as_view(), name='question-contribute'),
     path('contributions/', UserContributionsAPIView.as_view(), name='user-contributions'),
     path('<uuid:question_id>/contribute-test-cases/', ContributeTestCasesAPIView.as_view(), name='contribute-test-cases'),
+    
+    path('<uuid:question_id>/contribute-test-cases/', ContributeTestCasesAPIView.as_view(), name='contribute-test-cases'),
+
 ] 

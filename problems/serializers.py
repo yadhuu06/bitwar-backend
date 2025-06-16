@@ -87,11 +87,18 @@ class QuestionListSerializer(serializers.ModelSerializer):
     examples = ExampleSerializer(many=True, read_only=True)
     solved_codes = SolvedCodeSerializer(many=True, read_only=True)
     test_cases = TestCaseSerializer(many=True, read_only=True)
+    contribution_status = serializers.CharField(read_only=True, allow_null=True)
 
     def to_representation(self, instance):
         representation = super().to_representation(instance)
+        # Map the tags field to its display value
         tag_display = dict(Question.TAGS_CHOICES).get(representation['tags'], representation['tags'])
         representation['tags'] = tag_display
+        # Map the contribution_status to its display value
+        contribution_status_display = dict(Question.CONTRIBUTION_STATUS_CHOICES).get(
+            representation['contribution_status'], representation['contribution_status']
+        )
+        representation['contribution_status'] = contribution_status_display
         return representation
 
     class Meta:
@@ -105,16 +112,17 @@ class QuestionListSerializer(serializers.ModelSerializer):
             'tags',
             'is_validate',
             'created_by',
+            'is_contributed',
+            'contribution_status',
             'created_at',
             'updated_at',
             'examples',
             'solved_codes',
             'test_cases',
         ]
-
 from .models import SolvedCode
 
 class SolvedCodeSerializer(serializers.ModelSerializer):
     class Meta:
         model = SolvedCode
-        fields = ['id', 'language', 'solution_code', 'created_at']
+        fields = ['id', 'language', 'solution_code', 'created_at','is']

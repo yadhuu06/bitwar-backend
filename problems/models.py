@@ -20,7 +20,10 @@ class Question(models.Model):
         ('QUESTION_SUBMITTED', 'Question Submitted'),
         ('TEST_CASES_SUBMITTED', 'Test Cases Submitted'),
         ('CODE_SUBMITTED', 'Code Submitted'),
-        ('COMPLETED', 'Completed'),]
+        ('ON_VERIFICATION', 'On Verification'),
+        ('Accepted', 'Accepted'),
+        ('Rejected', 'Rejected'),
+    ]
 
     title = models.CharField(max_length=255, unique=True, db_index=True)
     question_id = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
