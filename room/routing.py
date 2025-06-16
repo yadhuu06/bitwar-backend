@@ -1,10 +1,11 @@
 from django.urls import re_path
-from . import consumers
+from room.consumers.room_list import RoomConsumer
+from room.consumers.room_lobby import RoomLobbyConsumer
 
 websocket_urlpatterns = [
-    re_path(r'ws/rooms/$', consumers.RoomConsumer.as_asgi()),
-    re_path(
-        r'ws/rooms/(?P<room_id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/$',
-        consumers.RoomLobbyConsumer.as_asgi()
-    ),
+    re_path(r'^ws/rooms/$', RoomConsumer.as_asgi()),
+    re_path(r'^ws/room/(?P<room_id>[^/]+)/?$', RoomLobbyConsumer.as_asgi()),
 ]
+
+
+print("WebSocket routes loaded:", websocket_urlpatterns)
