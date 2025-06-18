@@ -82,7 +82,7 @@ class GenerateOTPView(APIView):
             otp_instance.set_otp(otp)
 
         otp_instance.save()
-        print(f"Generated OTP for {email}: {otp}")  # Debug
+        print(f"Generated OTP for {email}: {otp}") 
 
         # Email content
         subject = '🔐 < Bit Code > Email Verification - OTP Inside'
@@ -98,9 +98,9 @@ class GenerateOTPView(APIView):
                 html_message=html_message,
                 fail_silently=False,
             )
-            print(f"Email sent to {email}")  # Debug
+            print(f"Email sent to {email}")  
         except Exception as e:
-            print(f"Email sending failed for {email}: {str(e)}")  # Debug
+            print(f"Email sending failed for {email}: {str(e)}")
             return Response(
                 {'error': 'Failed to send OTP', 'details': str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -179,7 +179,7 @@ def register_view(request):
 @permission_classes([AllowAny])
 @csrf_exempt
 def login_view(request):
-    """Authenticate user and return tokens."""
+
     email = request.data.get('email')
     password = request.data.get('password')
     if not email or not password:
@@ -272,7 +272,7 @@ class GoogleLoginCallback(APIView):
 
 logger = logging.getLogger(__name__)
 
-@csrf_exempt  # Exempt from CSRF protection
+@csrf_exempt  
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def logout_view(request):
@@ -304,7 +304,7 @@ def user_dashboard_view(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def admin_dashboard_view(request):
-    """Render admin dashboard for superusers."""
+
     user = request.user
     if not user.is_superuser:
         return Response({"error": "Admin access required"}, status=status.HTTP_403_FORBIDDEN)
@@ -318,7 +318,7 @@ def admin_dashboard_view(request):
 @api_view(['GET', 'PATCH'])
 @permission_classes([IsAuthenticated])
 def profile_view(request):
-    """View or update user profile."""
+
     user = request.user
     if request.method == 'GET':
         serializer = UserSerializer(user)

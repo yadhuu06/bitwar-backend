@@ -1,13 +1,18 @@
+from channels.db import database_sync_to_async
+from django.utils import timezone
+from room.models import Room, RoomParticipant
 from room.consumers.base_consumer import BaseConsumer
-from room.utils.auth import WebSocketAuthMixin
 from room.services.room_service import get_room, close_room, get_room_list
 from room.services.participant_service import (
     ensure_participant, get_participants, check_participant, update_participant_status,
     update_ready_status, kick_participant
 )
 from room.services.chat_service import save_chat_message, get_chat_history, clear_chat_messages
+from room.utils.auth import WebSocketAuthMixin
 from room.utils.error_handler import send_error
-from django.utils import timezone
+from problems.models import Question, Example,TestCase
+from django.db.models import Q
+import random
 
 class RoomLobbyConsumer(BaseConsumer, WebSocketAuthMixin):
     def __init__(self, *args, **kwargs):
@@ -68,9 +73,11 @@ class RoomLobbyConsumer(BaseConsumer, WebSocketAuthMixin):
             'kick_participant': self.handle_kick_participant,
             'ready_toggle': self.handle_ready_toggle,
             'start_countdown': self.handle_start_countdown,
+            'start_battle': self.handle_start_battle,
             'close_room': self.handle_close_room,
             'leave_room': self.handle_leave_room,
             'ping': self.handle_ping,
+            'request_chat_history': self.handle_request_chat_history,
         }
         handler = handlers.get(message_type)
         if handler:
@@ -141,6 +148,61 @@ class RoomLobbyConsumer(BaseConsumer, WebSocketAuthMixin):
             'is_ranked': room.is_ranked,
         })
 
+    async def handle_start_battle(self, data):
+        if not await self.is_host():
+            await send_error(self, "Only the host can start the battle")
+            return
+        room = await get_room(self.room_id)
+        if not room:
+            await send_error(self, "Room not found", code=4005)
+            return
+        if room.status != 'Playing':
+            await send_error(self, "Room is not in Playing status")
+            return
+
+        questions = await self.database_sync_to_async(
+            lambda: Question.objects.filter(
+                tags=room.topic,
+                difficulty=room.difficulty
+            ).filter(
+                Q(is_contributed=False) |
+                Q(is_contributed=True, contribution_status="Accepted")
+            ).exclude(
+                is_validated=False
+            )
+        )()
+        if not questions:
+            await send_error(self, "No questions available", code=4004)
+            return
+
+        question = random.choice(list(questions))
+        room.active_question = question
+        await self.database_sync_to_async(room.save)()
+
+        examples = await self.database_sync_to_async(
+            lambda: list(Example.objects.filter(question=question).values(
+                'input_example', 'output_example', 'explanation'
+            ))
+        )()
+        testCases=await self.database_sync_to_async(lambda:list(TestCase.objects.filter(question=question)))
+
+        question_data = {
+            'id': question.id,
+            'title': question.title,
+            'description': question.description,
+            'tags': question.tags,
+            'difficulty': question.difficulty,
+            'examples': examples,
+            'testcases':testCases
+        }
+
+
+        await self.broadcast({
+            'type': 'battle_started',
+            'question': question_data,
+            'room_id': str(room.room_id),
+        })
+
     async def handle_close_room(self, data):
         if not await self.is_host():
             await send_error(self, "Only the host can close the room")
@@ -166,6 +228,9 @@ class RoomLobbyConsumer(BaseConsumer, WebSocketAuthMixin):
 
     async def handle_ping(self, data):
         await self.send_json({'type': 'pong'})
+
+    async def handle_request_chat_history(self, data):
+        await self.send_chat_history()
 
     async def send_system_message(self, message):
         await save_chat_message(self.room_id, message, sender="System", is_system=True)
@@ -204,10 +269,10 @@ class RoomLobbyConsumer(BaseConsumer, WebSocketAuthMixin):
 
     async def is_host(self):
         participants = await get_participants(self.room_id)
-        for participant in participants:
-            if participant['user__username'] == self.user.username and participant['role'] == 'host':
-                return True
-        return False
+        return any(
+            p['user__username'] == self.user.username and p['role'] == 'host'
+            for p in participants
+        )
 
     async def broadcast(self, message):
         await self.channel_layer.group_send(self.room_group_name, message)
@@ -225,6 +290,10 @@ class RoomLobbyConsumer(BaseConsumer, WebSocketAuthMixin):
         except Exception as e:
             print(f"[ERROR] Error triggering room update: {str(e)}")
 
+    async def database_sync_to_async(self, func):
+        from asgiref.sync import sync_to_async
+        return await sync_to_async(func)()
+
     async def chat_message(self, event):
         await self.send_json(event)
 
@@ -238,6 +307,9 @@ class RoomLobbyConsumer(BaseConsumer, WebSocketAuthMixin):
         await self.send_json(event)
 
     async def countdown(self, event):
+        await self.send_json(event)
+
+    async def battle_started(self, event):
         await self.send_json(event)
 
     async def kicked(self, event):

@@ -57,9 +57,13 @@ class UserSerializer(serializers.ModelSerializer):
         fields = ['username', 'email', 'created_at', 'profile_picture', 'is_staff']
 
     def get_profile_picture(self, obj):
-        if obj.profile_picture :
-            return f"{settings.MEDIA_URL}{obj.profile_picture.name}"
+        if obj.profile_picture:
+            path = str(obj.profile_picture)
+            if path.startswith("http://") or path.startswith("https://"):
+                return path  
+            return f"{settings.MEDIA_URL}{path}"  
         return f"{settings.MEDIA_URL}profile_pics/default/coding_hacker.png"
+
 
     def validate_username(self, value):
         user = self.instance

@@ -1,6 +1,5 @@
 from channels.db import database_sync_to_async
 from room.models import Room, RoomParticipant
-from django.db.models import Q
 
 @database_sync_to_async
 def get_room(room_id):

@@ -9,6 +9,7 @@ import uuid
 import random
 import string
 import json
+from problems.models import Question
 
 def generate_join_code():
     characters = string.ascii_uppercase + string.digits
@@ -41,6 +42,9 @@ class Room(models.Model):
     participant_count = models.PositiveIntegerField(default=1, null=False, blank=False)
     visibility = models.CharField(max_length=10, choices=ROOM_VISIBILITY_CHOICES, default='public', null=False, blank=False)
     password = models.CharField(max_length=128, blank=True, null=True)
+    
+    active_question = models.ForeignKey(Question, null=True, blank=True, on_delete=models.SET_NULL)
+
     is_active = models.BooleanField(default=True, null=False)
     status = models.CharField(
         max_length=20,

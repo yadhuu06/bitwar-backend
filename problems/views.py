@@ -410,7 +410,8 @@ class UserContributionsAPIView(APIView):
                 {
                     "title": q.title,
                     "date": q.created_at.strftime("%Y-%m-%d"),
-                    "type": "Submitted Question"
+                    "type": "Submitted Question",
+                    "status":q.contribution_status
                 } for q in recent_contributions
             ]
             return Response({
