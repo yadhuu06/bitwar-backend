@@ -184,7 +184,12 @@ class RoomLobbyConsumer(BaseConsumer, WebSocketAuthMixin):
                 'input_example', 'output_example', 'explanation'
             ))
         )()
-        testCases=await self.database_sync_to_async(lambda:list(TestCase.objects.filter(question=question)))
+        testCases = await database_sync_to_async(
+            lambda: list(TestCase.objects.filter(question=question).values(
+                'input', 'expected_output', 'hidden', 'other_fields_you_want'
+            ))
+        )()
+
 
         question_data = {
             'id': question.id,
@@ -193,7 +198,7 @@ class RoomLobbyConsumer(BaseConsumer, WebSocketAuthMixin):
             'tags': question.tags,
             'difficulty': question.difficulty,
             'examples': examples,
-            'testcases':testCases
+            'testcases':list(testCases)
         }
 
 
