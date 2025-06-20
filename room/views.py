@@ -337,6 +337,7 @@ class StartRoomAPIView(APIView):
 
             room.status = 'Playing'
             room.save()
+            
 
             
 

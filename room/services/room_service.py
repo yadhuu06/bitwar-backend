@@ -3,7 +3,6 @@ from room.models import Room, RoomParticipant
 
 @database_sync_to_async
 def get_room(room_id):
-    """Retrieve a room by ID."""
     try:
         return Room.objects.get(room_id=room_id)
     except Room.DoesNotExist:
@@ -11,7 +10,6 @@ def get_room(room_id):
 
 @database_sync_to_async
 def get_room_list():
-    """Retrieve the list of active rooms with participants."""
     rooms = Room.objects.filter(is_active=True).prefetch_related('participants').values(
         'room_id', 'name', 'owner__username', 'topic', 'difficulty',
         'time_limit', 'capacity', 'participant_count', 'visibility', 'status', 'is_ranked', 'join_code'
@@ -30,7 +28,7 @@ def get_room_list():
 
 @database_sync_to_async
 def close_room(room_id):
-    """Close a room and mark it inactive."""
+    
     try:
         room = Room.objects.get(room_id=room_id)
         room.is_active = False

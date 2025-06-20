@@ -73,7 +73,7 @@ class RoomLobbyConsumer(BaseConsumer, WebSocketAuthMixin):
             'kick_participant': self.handle_kick_participant,
             'ready_toggle': self.handle_ready_toggle,
             'start_countdown': self.handle_start_countdown,
-            'start_battle': self.handle_start_battle,
+            
             'close_room': self.handle_close_room,
             'leave_room': self.handle_leave_room,
             'ping': self.handle_ping,
@@ -134,62 +134,49 @@ class RoomLobbyConsumer(BaseConsumer, WebSocketAuthMixin):
         if not await self.is_host():
             await send_error(self, "Only the host can start the countdown")
             return
+
         room = await get_room(self.room_id)
+
         if room.is_ranked:
             participants = await get_participants(self.room_id)
             non_host_participants = [p for p in participants if p['role'] != 'host']
             if not all(p['ready'] for p in non_host_participants):
                 await send_error(self, "All participants must be ready for ranked mode")
                 return
-        countdown = data.get('countdown', 5)
-        await self.broadcast({
-            'type': 'countdown',
-            'countdown': countdown,
-            'is_ranked': room.is_ranked,
-        })
-
-    async def handle_start_battle(self, data):
-        if not await self.is_host():
-            await send_error(self, "Only the host can start the battle")
-            return
-        room = await get_room(self.room_id)
-        if not room:
-            await send_error(self, "Room not found", code=4005)
-            return
-        if room.status != 'Playing':
-            await send_error(self, "Room is not in Playing status")
-            return
 
         questions = await self.database_sync_to_async(
-            lambda: Question.objects.filter(
+            lambda: list(Question.objects.filter(
                 tags=room.topic,
                 difficulty=room.difficulty
             ).filter(
                 Q(is_contributed=False) |
                 Q(is_contributed=True, contribution_status="Accepted")
             ).exclude(
-                is_validated=False
-            )
-        )()
+                is_validate=False
+            ))
+        )
+
         if not questions:
             await send_error(self, "No questions available", code=4004)
             return
 
-        question = random.choice(list(questions))
+        question = random.choice(questions)
         room.active_question = question
-        await self.database_sync_to_async(room.save)()
+        await self.database_sync_to_async(lambda: room.save())
+        room = await get_room(self.room_id)
+        print("the saved question is >>>>>>>>>>>>>>>>>>",room)
 
-        examples = await self.database_sync_to_async(
-            lambda: list(Example.objects.filter(question=question).values(
+        examples = await self.database_sync_to_async(lambda: list(
+            Example.objects.filter(question=question).values(
                 'input_example', 'output_example', 'explanation'
-            ))
-        )()
-        testCases = await database_sync_to_async(
-            lambda: list(TestCase.objects.filter(question=question).values(
-                'input', 'expected_output', 'hidden', 'other_fields_you_want'
-            ))
-        )()
+            )
+        ))
 
+        testCases = await self.database_sync_to_async(lambda: list(
+            TestCase.objects.filter(question=question).values(
+                'input_data', 'expected_output'
+            )
+        ))
 
         question_data = {
             'id': question.id,
@@ -198,15 +185,21 @@ class RoomLobbyConsumer(BaseConsumer, WebSocketAuthMixin):
             'tags': question.tags,
             'difficulty': question.difficulty,
             'examples': examples,
-            'testcases':list(testCases)
+            'testcases': testCases
         }
 
-
         await self.broadcast({
-            'type': 'battle_started',
+            'type': 'battle_ready',
             'question': question_data,
             'room_id': str(room.room_id),
         })
+        countdown = data.get('countdown', 5)
+        await self.broadcast({
+            'type': 'countdown',
+            'countdown': countdown,
+            'is_ranked': room.is_ranked,
+        })
+
 
     async def handle_close_room(self, data):
         if not await self.is_host():
