@@ -12,6 +12,7 @@ import traceback
 from .models import Room, RoomParticipant
 from .serializers import RoomCreateSerializer
 from problems.models import Question, Example
+from .utils.battle import select_random_question
 
 logger = logging.getLogger(__name__)
 
@@ -311,6 +312,7 @@ class StartRoomAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, room_id):
+        print("request post start room",request)
         try:
             logger.debug(f"Starting room: {room_id}")
             room = Room.objects.get(room_id=room_id, is_active=True)
@@ -335,14 +337,20 @@ class StartRoomAPIView(APIView):
                 logger.error(f"Not all non-host participants are ready for ranked room {room_id}")
                 return Response({'error': 'All non-host participants must be ready for ranked mode'}, status=status.HTTP_400_BAD_REQUEST)
 
+            selected_question = select_random_question(room)
+            if not selected_question:
+                logger.error(f"No valid questions found for room {room_id}")
+                return Response({'error': 'No valid questions available for this room'}, status=status.HTTP_400_BAD_REQUEST)
+
             room.status = 'Playing'
+            room.active_question = selected_question
             room.save()
-            
 
-            
-
-            logger.info(f"Room {room_id} started successfully")
-            return Response({'message': 'Room started successfully'}, status=status.HTTP_200_OK)
+            logger.info(f"Room {room_id} started successfully with question {selected_question.id}")
+            return Response({
+                'message': 'Room started successfully',
+                'question_id': selected_question.id
+            }, status=status.HTTP_200_OK)
         except Room.DoesNotExist:
             logger.error(f"Room not found or inactive: {room_id}")
             return Response({'error': 'Room not found or inactive'}, status=status.HTTP_404_NOT_FOUND)
