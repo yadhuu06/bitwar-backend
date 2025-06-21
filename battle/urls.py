@@ -1,8 +1,8 @@
 from django.urls import path
-
+from .views import QuestionDetailAPIView
 
 urlpatterns = [
     
-    path('<uuid:room_id>/', BattleQuestion.as_view(), name='get_room_details'),
+    path('<int:id>/', QuestionDetailAPIView.as_view(), name='get-problem-details'),
     
 ]

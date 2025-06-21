@@ -114,9 +114,9 @@ class RoomDetailAPIView(APIView):
             try:
                 participant = RoomParticipant.objects.get(room=room, user=request.user)
                 if participant.blocked:
-                    return Response({'error': 'You are not authorised person'}, status=status.HTTP_403_FORBIDDEN)
+                    return Response({'error': 'You are not authorised person'}, status=status.HTTP_404_NOT_FOUND)
             except RoomParticipant.DoesNotExist:
-                return Response({'error': 'You are not authorised person'}, status=status.HTTP_403_FORBIDDEN)
+                return Response({'error': 'You are not authorised person'}, status=status.HTTP_404_NOT_FOUND)
 
             participants = RoomParticipant.objects.filter(room=room).values('user__username', 'role', 'status', 'ready')
 

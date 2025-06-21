@@ -14,7 +14,7 @@ urlpatterns = [
     path('admin-panel/', include('admin_panel.urls')),
     path('rooms/', include('room.urls')),
     path('questions/', include('problems.urls')),
-    path('battle',include('battle.urls'))
+    path('battle/',include('battle.urls'))
 
 ]
 

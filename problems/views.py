@@ -262,6 +262,7 @@ class CodeVerifyAPIView(APIView):
                 question.save()
                 serializer = SolvedCodeSerializer(solved)
                 solved_data = serializer.data
+                print(solved_data)
 
         return Response({
             "message": "Verification completed.",
