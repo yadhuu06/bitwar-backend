@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from rest_framework.validators import UniqueValidator
+from django.conf import settings
 from .models import OTP, CustomUser
-
 
 class RegisterSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(
@@ -27,27 +27,12 @@ class RegisterSerializer(serializers.ModelSerializer):
         # Clear OTP after successful registration
         OTP.objects.filter(email=validated_data['email']).delete()
         return user
-
-
-
-
 class OTPSerializer(serializers.ModelSerializer):
     class Meta:
+        print("call came")
         model = OTP
-        fields = ('email',)
-
-
-
-
-from rest_framework import serializers
-from .models import CustomUser  
-
-from django.conf import settings
-from rest_framework import serializers
-from .models import CustomUser
-
-from rest_framework import serializers
-from django.conf import settings
+        fields = ('email','otp_type')
+        print ("fields",fields)
 
 class UserSerializer(serializers.ModelSerializer):
     profile_picture = serializers.SerializerMethodField()

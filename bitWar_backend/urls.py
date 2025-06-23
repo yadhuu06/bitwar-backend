@@ -1,9 +1,9 @@
 from django.urls import path, include
 from rest_framework_simplejwt.views import (
-    TokenObtainPairView,
+
     TokenRefreshView,
 )
-from authentication.views import GoogleLoginCallback
+
 from django.conf.urls.static import static
 from django.conf import settings
 

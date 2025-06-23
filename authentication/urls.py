@@ -1,19 +1,16 @@
 from django.urls import path
-from .views import (
-    register_view, login_view, profile_view,
-    GenerateOTPView, VerifyOTPView, RegisterCompleteView,
-    admin_dashboard_view, GoogleLoginCallback, logout_view, user_dashboard_view
-)
+from authentication import views
 
 urlpatterns = [
-    path('register/', register_view, name='register'),
-    path('login/', login_view, name='login'),
-    path('profile/', profile_view, name='profile'),
-    path('otp/generate/', GenerateOTPView.as_view(), name='generate_otp'),
-    path('otp/verify/', VerifyOTPView.as_view(), name='verify_otp'),
-    path('register/complete/', RegisterCompleteView.as_view(), name='register_complete'),
-    path('user-dashboard/', user_dashboard_view, name='user_dashboard'),
-    path('admin-dashboard/', admin_dashboard_view, name='admin_dashboard'),
-    path('google/callback/', GoogleLoginCallback.as_view(), name='google_callback'),
-    path('logout/', logout_view, name='logout_view'),
+    path('aotp/generate/', views.GenerateOTPView.as_view(), name='generate_otp'),
+    path('otp/verify/', views.VerifyOTPView.as_view(), name='verify_otp'),
+    path('password/reset/', views.PasswordResetView.as_view(), name='password_reset'),
+    path('register/complete/', views.RegisterCompleteView.as_view(), name='register_complete'),
+    path('register/', views.RegisterView.as_view(), name='register'),
+    path('login/', views.LoginView.as_view(), name='login'),
+    path('google/callback/', views.GoogleLoginCallbackView.as_view(), name='google_callback'),
+    path('logout/', views.LogoutView.as_view(), name='logout'),
+    path('dashboard/', views.UserDashboardView.as_view(), name='user_dashboard'),
+    path('dashboard/', views.AdminDashboardView.as_view(), name='admin_dashboard'),
+    path('profile/', views.ProfileView.as_view(), name='profile'),
 ]

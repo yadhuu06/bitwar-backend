@@ -81,13 +81,20 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
 
 ENCRYPTION_KEY = getattr(settings, 'FERNET_KEY', Fernet.generate_key())  
 FERNET = Fernet(ENCRYPTION_KEY)
+OTP_TYPE_CHOICES = [
+    ('registration', 'Registration'),
+    ('forgot_password', 'Forgot Password'),
+]
+
+
 
 class OTP(models.Model):
-    email = models.EmailField(unique=True)
+    email = models.EmailField()
     otp_encrypted = models.BinaryField()  
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField()
     is_verified = models.BooleanField(default=False) 
+    otp_type = models.CharField(max_length=20, choices=OTP_TYPE_CHOICES, default='registration')
 
     def save(self, *args, **kwargs):
         if not self.expires_at:
@@ -137,5 +144,3 @@ class OTP(models.Model):
             models.Index(fields=['is_verified']),
         ]
 
-    def __str__(self):
-        return f"OTP for {self.email} (Verified: {self.is_verified})"
