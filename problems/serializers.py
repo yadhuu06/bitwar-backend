@@ -1,6 +1,8 @@
 from rest_framework import serializers
 from django.utils.text import slugify
 from .models import Question, Example, SolvedCode, TestCase
+import ast
+import re
 
 class ExampleSerializer(serializers.ModelSerializer):
     class Meta:
@@ -13,9 +15,66 @@ class SolvedCodeSerializer(serializers.ModelSerializer):
         fields = ['id', 'language', 'solution_code', 'created_at']
 
 class TestCaseSerializer(serializers.ModelSerializer):
+    formatted_input = serializers.SerializerMethodField()
+
     class Meta:
         model = TestCase
-        fields = ['id', 'input_data', 'expected_output', 'is_sample']
+        fields = ['id', 'input_data', 'expected_output', 'is_sample', 'formatted_input']
+
+    def validate_input_data(self, value):
+        # Custom parser to handle new input formats: "a,b", "[1,2,3]", "[1,2,3],4"
+        try:
+            parsed_data = self._parse_input(value)
+            if not parsed_data:
+                raise ValueError("Invalid input format")
+            # Validate the parsed result as a Python literal if applicable
+            if isinstance(parsed_data, (list, tuple, dict)):
+                ast.literal_eval(str(parsed_data))
+            return value
+        except (ValueError, SyntaxError):
+            raise serializers.ValidationError("input_data must be a valid format (e.g., '12,34', '[1,2,3]', or '[1,2,3],4')")
+
+    def _parse_input(self, value):
+        # Remove leading/trailing whitespace
+        value = value.strip()
+        # Case 1: Comma-separated values (e.g., "12,34" -> {"a": 12, "b": 34})
+        if "," in value and not value.startswith("["):
+            parts = [p.strip() for p in value.split(",")]
+            if len(parts) == 2:
+                try:
+                    return {"a": ast.literal_eval(parts[0]), "b": ast.literal_eval(parts[1])}
+                except (ValueError, SyntaxError):
+                    return tuple(ast.literal_eval(f"({value})"))
+            return tuple(ast.literal_eval(f"({value})"))
+        # Case 2: Array with optional addend (e.g., "[1,2,3],4" -> ([1,2,3], 4))
+        match = re.match(r"\[(.*?)\](?:,(\d+))?", value)
+        if match:
+            array_str = match.group(1)
+            addend_str = match.group(2)
+            array = ast.literal_eval(f"[{array_str}]") if array_str else []
+            addend = ast.literal_eval(addend_str) if addend_str else None
+            return (array, addend) if addend is not None else array
+        # Fallback: Treat as raw string and attempt literal eval
+        return ast.literal_eval(value)
+
+    def get_formatted_input(self, obj):
+        # Format input_data for user-friendly display
+        try:
+            parsed = self._parse_input(obj.input_data)
+            if isinstance(parsed, dict):
+                return ", ".join(f"{key} = {value}" for key, value in parsed.items())
+            elif isinstance(parsed, tuple) and len(parsed) == 2 and isinstance(parsed[1], (int, float)):
+                return f"arr = {parsed[0]}, addend = {parsed[1]}"
+            elif isinstance(parsed, (list, tuple)):
+                if obj.input_data.replace(" ", "").count(",") > 0 and not obj.input_data.startswith("["):
+                    return ", ".join(str(x) for x in parsed)
+                return f"arr = {parsed}"
+            elif isinstance(parsed, (int, float, str, bool)):
+                return str(parsed)
+            else:
+                return obj.input_data
+        except (ValueError, SyntaxError):
+            return obj.input_data
 
 class QuestionInitialCreateSerializer(serializers.ModelSerializer):
     examples = ExampleSerializer(many=True, required=False)
@@ -118,9 +177,3 @@ class QuestionListSerializer(serializers.ModelSerializer):
             'solved_codes',
             'test_cases',
         ]
-from .models import SolvedCode
-
-class SolvedCodeSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = SolvedCode
-        fields = ['id', 'language', 'solution_code', 'created_at']

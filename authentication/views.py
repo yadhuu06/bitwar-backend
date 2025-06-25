@@ -101,6 +101,13 @@ class GenerateOTPView(APIView):
             'expires_in': expiration_time
         }, status=status.HTTP_200_OK)
 
+import logging
+
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from rest_framework.permissions import AllowAny
+
 class VerifyOTPView(APIView):
     throttle_classes = [OTPThrottle]
     permission_classes = [AllowAny]
@@ -108,31 +115,26 @@ class VerifyOTPView(APIView):
     def post(self, request):
         email = request.data.get('email')
         otp_input = request.data.get('otp')
-        otp_type = request.data.get('otp_type')
-
-        if not email or not otp_input or not otp_type:
-            return Response({'error': 'Email, OTP, and OTP type are required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        if not email or not otp_input:
+            return Response({'error': 'Email and OTP are required'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            otp_instance = OTP.objects.get(email=email, otp_type=otp_type)
+            otp_instance = OTP.objects.get(email=email)
 
             if otp_instance.is_expired():
-                return Response({'error': 'OTP expired'}, status=status.HTTP_400_BAD_REQUEST)
-
-            if otp_instance.otp_type == "forgot_password":
-                try:
-                    CustomUser.objects.get(email=email)
-                except CustomUser.DoesNotExist:
-                    return Response({'error': "No user found with this email"}, status=status.HTTP_404_NOT_FOUND)
-
+                otp_instance.delete()
+                return Response({'error': 'OTP expired'}, status=status.HTTP_400_BAD_REQUEST)            
             if otp_instance.get_otp() != otp_input:
                 return Response({'error': 'Invalid OTP'}, status=status.HTTP_400_BAD_REQUEST)
+            
 
             otp_instance.mark_verified()
+
             return Response({'message': 'OTP verified successfully'}, status=status.HTTP_200_OK)
 
         except OTP.DoesNotExist:
-            return Response({'error': 'No OTP found for this email and type'}, status=status.HTTP_404_NOT_FOUND)
+            return Response({'error': 'No OTP found for this email'}, status=status.HTTP_404_NOT_FOUND)
 
 class PasswordResetView(APIView):
     throttle_classes = [OTPThrottle]

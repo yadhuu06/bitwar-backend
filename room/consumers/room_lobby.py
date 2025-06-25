@@ -16,10 +16,7 @@ import json
 logger = logging.getLogger(__name__)
 
 class RoomLobbyConsumer(BaseConsumer, WebSocketAuthMixin):
-    """
-    WebSocket consumer for handling room lobby interactions.
-    Manages user connections, chat messages, participant updates, and room lifecycle events.
-    """
+
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

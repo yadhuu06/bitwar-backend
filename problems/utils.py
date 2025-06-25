@@ -1,13 +1,13 @@
-# your_app/utils.py
 import re
-
+import ast
+from .serializers import TestCaseSerializer
 def extract_function_name(code: str) -> str:
-    """Extract the function name from the provided code."""
+
     patterns = [
-        r'def\s+(\w+)\s*\(',  # Python
-        r'function\s+(\w+)\s*\(',  # JavaScript
-        r'public\s+(?:static\s+)?(?:\w+\s+)?(\w+)\s*\(',  # Java
-        r'(?:int|void|double|float|char|string)\s+(\w+)\s*\(',  # C++ and others
+        r'def\s+(\w+)\s*\(',  
+        r'function\s+(\w+)\s*\(',  
+        r'public\s+(?:static\s+)?(?:\w+\s+)?(\w+)\s*\(',  
+        r'(?:int|void|double|float|char|string)\s+(\w+)\s*\(',  
     ]
     for pattern in patterns:
         match = re.search(pattern, code)
@@ -16,18 +16,29 @@ def extract_function_name(code: str) -> str:
     raise ValueError("No valid function definition found in code")
 
 def has_restricted_main_block(code: str) -> bool:
-    """Check if Python code contains a restricted __main__ block."""
+
     pattern = r'if\s+__name__\s*==\s*[\'""]__main__[\'""]\s*:'
     return bool(re.search(pattern, code))
 
-def wrap_user_code(code: str, language: str) -> str:
-    """Wrap user code for Judge0 execution based on the language."""
+def wrap_user_code(code: str, language: str, input_data: str) -> str:
     try:
         fn = extract_function_name(code)
         if language == "python":
-            return f"""import ast\n{code}\n\nif __name__ == "__main__":\n    arr = ast.literal_eval(input())\n    print({fn}(arr))"""
+
+            parsed_data = TestCaseSerializer()._parse_input(input_data)
+            wrapper = f"""import ast\n{code}\n\nif __name__ == "__main__":\n"""
+            if isinstance(parsed_data, dict):
+                wrapper += f"    result = {fn}(**{str(parsed_data)})\n"
+            elif isinstance(parsed_data, tuple) and len(parsed_data) == 2 and isinstance(parsed_data[1], (int, float)):
+                wrapper += f"    arr, addend = {str(parsed_data[0])}, {str(parsed_data[1])}\n    result = {fn}(arr, addend)\n"
+            elif isinstance(parsed_data, (list, tuple)):
+                wrapper += f"    result = {fn}(*{str(parsed_data)})\n"
+            else:
+                wrapper += f"    result = {fn}({str(parsed_data)})\n"
+            wrapper += "    print(result)"
+            return wrapper
         elif language == "javascript":
-            return f"""{code}\n\nconst readline = require('readline');\nconst rl = readline.createInterface({{\n  input: process.stdin,\n  output: process.stdout,\n}});\n\nrl.on('line', (line) => {{\n  const arr = JSON.parse(line);\n  console.log({fn}(arr));\n  rl.close();\n}});"""
+            return f"""{code}\n\nconst readline = require('readline');\nconst rl = readline.createInterface({{\n  input: process.stdin,\n  output: process.stdout,\n}});\n\nrl.on('line', (line) => {{\n  const input_data = JSON.parse(line);\n  const result = Array.isArray(input_data) ? {fn}(...input_data) : typeof input_data === 'object' ? {fn}(input_data) : {fn}(input_data);\n  console.log(result);\n  rl.close();\n}});"""
         elif language == "java":
             class_name = re.search(r'class\s+(\w+)', code)
             if not class_name:

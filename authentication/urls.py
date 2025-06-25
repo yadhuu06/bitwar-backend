@@ -2,7 +2,7 @@ from django.urls import path
 from authentication import views
 
 urlpatterns = [
-    path('aotp/generate/', views.GenerateOTPView.as_view(), name='generate_otp'),
+    path('otp/generate/', views.GenerateOTPView.as_view(), name='generate_otp'),
     path('otp/verify/', views.VerifyOTPView.as_view(), name='verify_otp'),
     path('password/reset/', views.PasswordResetView.as_view(), name='password_reset'),
     path('register/complete/', views.RegisterCompleteView.as_view(), name='register_complete'),

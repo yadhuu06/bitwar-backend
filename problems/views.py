@@ -1,15 +1,14 @@
 import re
 import requests
-
+from django.conf import settings
 from django.db import transaction
-from django.shortcuts import render
-
+from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework.response import Response
 from rest_framework.views import APIView
-
+from .services.judge0_service import verify_with_judge0
 from authentication.models import CustomUser
 from .models import Question, TestCase, SolvedCode
 from .serializers import (
@@ -19,7 +18,7 @@ from .serializers import (
     SolvedCodeSerializer
 )
 import ast
-from . utils import extract_function_name,wrap_user_code,has_restricted_main_block
+from .utils import extract_function_name, wrap_user_code, has_restricted_main_block
 
 class StandardResultsSetPagination(PageNumberPagination):
     page_size = 10
@@ -27,7 +26,7 @@ class StandardResultsSetPagination(PageNumberPagination):
     max_page_size = 100
 
 class QuestionCreateAPIView(APIView):
-    permission_classes = [IsAuthenticated,IsAdminUser]
+    permission_classes = [IsAuthenticated, IsAdminUser]
 
     def post(self, request):
         print("Create question data:", request.data)
@@ -73,7 +72,7 @@ class QuestionDetailAPIView(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 class QuestionsAPIView(APIView):
-    permission_classes = [IsAuthenticated,IsAdminUser]
+    permission_classes = [IsAuthenticated, IsAdminUser]
 
     def get(self, request):
         questions = Question.objects.all()
@@ -94,7 +93,9 @@ class TestCaseListCreateAPIView(APIView):
         search = request.query_params.get('search', '')
         is_sample = request.query_params.get('is_sample', None)
         if search:
-            test_cases = test_cases.filter(input_data__icontains=search) | test_cases.filter(expected_output__icontains=search)
+            # Updated to include formatted_input in search for better user experience
+            test_cases = test_cases.filter(input_data__icontains=search) | \
+                         test_cases.filter(expected_output__icontains=search)
         if is_sample is not None:
             test_cases = test_cases.filter(is_sample=is_sample.lower() == 'true')
         paginator = self.pagination_class()
@@ -113,7 +114,6 @@ class TestCaseListCreateAPIView(APIView):
 
         serializer = TestCaseSerializer(data=request.data)
         if serializer.is_valid():
-            
             serializer.save(question=question)
             return Response({
                 "message": "Test case created successfully",
@@ -122,7 +122,7 @@ class TestCaseListCreateAPIView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class TestCaseRetrieveUpdateDestroyAPIView(APIView):
-    permission_classes = [IsAuthenticated ,IsAdminUser]
+    permission_classes = [IsAuthenticated, IsAdminUser]
 
     def get(self, request, question_id, test_case_id):
         try:
@@ -161,10 +161,6 @@ class TestCaseRetrieveUpdateDestroyAPIView(APIView):
 
         test_case.delete()
         return Response({"message": "Test case deleted successfully"}, status=status.HTTP_204_NO_CONTENT)
-    
-
-
-JUDGE0_URL = "http://localhost:2358/submissions?base64_encoded=false&wait=true"
 
 LANGUAGE_MAP = {
     "python": 71,
@@ -175,67 +171,63 @@ LANGUAGE_MAP = {
 
 class CodeVerifyAPIView(APIView):
     
-
     def post(self, request, question_id):
-        print("data",request.data)
         code = request.data.get("code")
         language = request.data.get("language")
 
-        if not code or not language:
-            return Response({"error": "Code or language required"}, status=400)
-        if language not in LANGUAGE_MAP:
-            return Response({"error": "Unsupported language"}, status=400)
-        
-        try:
-            question = Question.objects.get(question_id=question_id)
-        except Question.DoesNotExist:
-            return Response({"error": "Question not found"}, status=404)
-        
+        question = get_object_or_404(Question, question_id=question_id)
         testcases = question.test_cases.all()
+
         if not testcases.exists():
-            return Response({"error": "No test cases available for the question"}, status=404)
-        
-        if language == "python":
-            if has_restricted_main_block(code):
-                return Response({"error": "Do not include 'if __name__ == \"__main__\":' block in your submission"}, status=400)
-        
+            print("no test case")
+            return Response({"error": "No test cases available for the question"}, status=status.HTTP_404_NOT_FOUND)
+
         all_passed = True
-        test_results = []
+        results = []
 
         for test in testcases:
             try:
-                submission_code = wrap_user_code(code, language)
-            except ValueError as e:
-                return Response({"error": "Code processing failed", "details": str(e)}, status=400)
-            
+
+                wrapped_code = wrap_user_code(code, language, test.input_data)
+                parsed_input = TestCaseSerializer()._parse_input(test.input_data)
+                if isinstance(parsed_input, dict):
+                    stdin = str(parsed_input)  # JSON-like string for dict
+                elif isinstance(parsed_input, tuple) and len(parsed_input) == 2 and isinstance(parsed_input[1], (int, float)):
+                    stdin = str(parsed_input[0])  # Send array only, function handles addend
+                elif isinstance(parsed_input, (list, tuple)):
+                    stdin = str(parsed_input)  # List/tuple as string
+                else:
+                    stdin = str(parsed_input)  
+            except (ValueError, SyntaxError):
+                stdin = test.input_data  
+
             payload = {
-                "source_code": submission_code,
+                "source_code": wrapped_code,
                 "language_id": LANGUAGE_MAP[language],
-                "stdin": test.input_data,
+                "stdin": stdin,
             }
             try:
-                response = requests.post(JUDGE0_URL, json=payload, timeout=15)
+                response = requests.post(settings.JUDGE0_API_URL, json=payload, timeout=15)
+                print("judge0 Response", response)
                 if response.status_code != 201:
-                    return Response({"error": "Judge0 error", "details": response.text}, status=500)
-                
+                    return Response({"error": "Judge0 error", "details": response.text, "status_code": response.status_code}, status=status.HTTP_400_BAD_REQUEST)
+
                 result = response.json()
                 actual_output = (result.get("stdout") or "").strip()
-                print("actual out",actual_output)
                 expected_output = (test.expected_output or "").strip()
-                print("expected",expected_output)
                 error_output = (result.get("stderr") or result.get("compile_output") or "").strip()
-                print("errorr",error_output)
+
                 try:
                     actual_eval = ast.literal_eval(actual_output)
                     expected_eval = ast.literal_eval(expected_output)
                     passed = actual_eval == expected_eval
                 except Exception:
-                    passed = actual_output.strip() == expected_output.strip()
+                    passed = actual_output == expected_output
 
                 if not passed:
                     all_passed = False
-                
-                test_results.append({
+
+                results.append({
                     "test_case_id": test.id,
                     "input": test.input_data,
                     "expected": expected_output,
@@ -244,8 +236,8 @@ class CodeVerifyAPIView(APIView):
                     "passed": passed,
                 })
             except requests.RequestException as e:
-                return Response({"error": "Judge0 request failed", "details": str(e)}, status=500)
-        
+                return Response({"error": "Request failed", "details": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
         solved_data = None
         if all_passed:
             with transaction.atomic():
@@ -255,27 +247,25 @@ class CodeVerifyAPIView(APIView):
                     language=language,
                     solution_code=code
                 )
-                if question.is_contributed and request.user.is_superuser==False:
+                if question.is_contributed and not request.user.is_superuser:
                     question.is_validate = False
                 else:
                     question.is_validate = True
                 question.save()
                 serializer = SolvedCodeSerializer(solved)
                 solved_data = serializer.data
-                print(solved_data)
 
         return Response({
             "message": "Verification completed.",
             "all_passed": all_passed,
-            "results": test_results,
+            "results": results,
             "solved_code": solved_data
-        }, status=200)
-    
+        }, status=status.HTTP_200_OK)
     def get(self, request, question_id):
         try:
             question = Question.objects.get(question_id=question_id)
         except Question.DoesNotExist:
-            return Response({"error": "Question not found"}, status=404)
+            return Response({"error": "Question not found"}, status=status.HTTP_404_NOT_FOUND)
         
         if request.path.endswith('solved-codes/'):
             try:
@@ -283,23 +273,22 @@ class CodeVerifyAPIView(APIView):
                 solved_data = {
                     code.language: SolvedCodeSerializer(code).data for code in solved_codes
                 }
-                return Response({"solved_codes": solved_data}, status=200)
+                return Response({"solved_codes": solved_data}, status=status.HTTP_200_OK)
             except Exception as e:
-                return Response({"error": "Failed to fetch solved codes", "details": str(e)}, status=500)
+                return Response({"error": "Failed to fetch solved codes", "details": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
         language = request.query_params.get("language")
         if not language:
-            return Response({"error": "Language parameter required"}, status=400)
+            return Response({"error": "Language parameter required"}, status=status.HTTP_400_BAD_REQUEST)
         if language not in LANGUAGE_MAP:
-            return Response({"error": "Unsupported language"}, status=400)
+            return Response({"error": "Unsupported language"}, status=status.HTTP_400_BAD_REQUEST)
         
         try:
             solved = SolvedCode.objects.filter(question=question, language=language).first()
             solved_data = SolvedCodeSerializer(solved).data if solved else None
-            return Response({"solved_code": solved_data}, status=200)
+            return Response({"solved_code": solved_data}, status=status.HTTP_200_OK)
         except Exception as e:
-            return Response({"error": "Failed to fetch solved code", "details": str(e)}, status=500)
-        
+            return Response({"error": "Failed to fetch solved code", "details": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     def patch(self, request, question_id):
         try:
@@ -323,23 +312,6 @@ class CodeVerifyAPIView(APIView):
         question.contribution_status = new_status
         question.save()
         return Response({"message": "Status updated"}, status=status.HTTP_200_OK)
-        
-
-
-
-        new_status = request.data.get("status")
-        
-        if new_status:
-            question.contribution_status = new_status
-            question.save()
-            return Response({"message": "Status updated"}, status=status.HTTP_200_OK)
-        else:
-            return Response({"error": "No status provided"}, status=status.HTTP_400_BAD_REQUEST)
-
-
-
-
-
 
 class QuestionContributeAPIView(APIView):
     permission_classes = [IsAuthenticated]
@@ -355,13 +327,14 @@ class QuestionContributeAPIView(APIView):
         if question_serializer.is_valid():
             question = question_serializer.save()
             question.contribution_status = 'QUESTION_SUBMITTED'
-            question.is_contributed=True
+            question.is_contributed = True
             question.save()
             return Response(
                 {"message": "Question created", "question_id": str(question.question_id)},
                 status=status.HTTP_201_CREATED
             )
         return Response({'errors': question_serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+
 class ContributeTestCasesAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -388,7 +361,6 @@ class ContributeTestCasesAPIView(APIView):
             serializer = TestCaseSerializer(data=tc_data)
             if not serializer.is_valid():
                 return Response({'errors': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
-
             serializer.save(question=question)
 
         question.contribution_status = 'TEST_CASES_SUBMITTED'
@@ -412,7 +384,7 @@ class UserContributionsAPIView(APIView):
                     "title": q.title,
                     "date": q.created_at.strftime("%Y-%m-%d"),
                     "type": "Submitted Question",
-                    "status":q.contribution_status
+                    "status": q.contribution_status
                 } for q in recent_contributions
             ]
             return Response({
