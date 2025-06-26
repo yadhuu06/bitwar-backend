@@ -54,6 +54,7 @@ class Room(models.Model):
         blank=False
     )
     created_at = models.DateTimeField(auto_now_add=True)
+    start_time = models.DateTimeField(null=True, blank=True, help_text="Time when the battle started")
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

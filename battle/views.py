@@ -12,6 +12,19 @@ import logging
 from problems.utils import wrap_user_code
 logger = logging.getLogger(__name__)
 
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from rest_framework import status
+from django.utils import timezone
+import logging
+from problems.models import Question, TestCase
+from problems.services.judge0_service import verify_with_judge0
+from problems.utils import wrap_user_code  
+logger = logging.getLogger(__name__)
+
+
+
 class BattleQuestionAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -51,16 +64,6 @@ class BattleQuestionAPIView(APIView):
             logger.error(f"Error fetching battle question {question_id}: {str(e)}")
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
-from rest_framework import status
-from django.utils import timezone
-import logging
-from problems.models import Question, TestCase
-from problems.services.judge0_service import verify_with_judge0
-from problems.utils import wrap_user_code  # Assuming this is your utility
-logger = logging.getLogger(__name__)
 
 class QuestionVerifyAPIView(APIView):
     permission_classes = [IsAuthenticated]
@@ -77,26 +80,22 @@ class QuestionVerifyAPIView(APIView):
             return Response({'error': 'Missing required fields'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            # Get the question
             question = Question.objects.filter(id=question_id).first()
             if not question:
                 logger.error(f"Question not found: {question_id}")
                 return Response({'error': 'Question not found'}, status=status.HTTP_404_NOT_FOUND)
 
-            # Get test cases for the question
             testcases = TestCase.objects.filter(question=question)
             if not testcases:
                 logger.error(f"No test cases found for question {question_id}")
                 return Response({'error': 'No test cases available'}, status=status.HTTP_400_BAD_REQUEST)
 
-            # ✅ Call verify_with_judge0 with raw code and testcases
             verification_result = verify_with_judge0(code, language, testcases)
 
             if 'error' in verification_result:
                 logger.error(f"Judge0 verification failed: {verification_result['error']}")
                 return Response(verification_result, status=status.HTTP_400_BAD_REQUEST)
 
-            # ✅ Save result if all test cases passed
             if verification_result['all_passed']:
                 battle_result, _ = BattleResult.objects.get_or_create(
                     room_id=room_id,

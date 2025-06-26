@@ -1,10 +1,7 @@
 from django.db import models
-
-from django.db import models
 from django.contrib.auth import get_user_model
 import uuid
 from django.db.models import JSONField
-
 
 User = get_user_model()
 
@@ -13,7 +10,6 @@ class BattleResult(models.Model):
     room = models.ForeignKey('room.Room', on_delete=models.CASCADE, related_name='results')
     question = models.ForeignKey('problems.Question', on_delete=models.CASCADE, related_name='battle_results')
     results = models.JSONField(default=list)
-
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -38,3 +34,18 @@ class BattleResult(models.Model):
         existing_results.append(participant_result)
         self.results = existing_results
         self.save()
+
+class UserRanking(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='rankings')
+    points = models.PositiveIntegerField(default=0)
+    last_updated = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['user']),
+            models.Index(fields=['points']),
+        ]
+        ordering = ['-points']
+
+    def __str__(self):
+        return f"{self.user.username}: {self.points} points"
