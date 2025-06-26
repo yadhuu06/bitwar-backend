@@ -161,6 +161,11 @@ class JoinRoomAPIView(APIView):
                 participant.status = 'joined'
                 participant.left_at = None
                 participant.save()
+                        
+                room.participant_count = RoomParticipant.objects.filter(
+                    room_id=room_id, status='joined'
+                ).count()
+                room.save()
 
                 participants = RoomParticipant.objects.filter(room=room).values('user__username', 'role', 'status', 'ready')
                 return Response({

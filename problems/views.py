@@ -170,10 +170,16 @@ LANGUAGE_MAP = {
 }
 
 class CodeVerifyAPIView(APIView):
-    
+        
     def post(self, request, question_id):
         code = request.data.get("code")
         language = request.data.get("language")
+
+        if not code or not language:
+            return Response({"error": "Code and language are required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        if language not in LANGUAGE_MAP:
+            return Response({"error": "Unsupported language"}, status=status.HTTP_400_BAD_REQUEST)
 
         question = get_object_or_404(Question, question_id=question_id)
         testcases = question.test_cases.all()
@@ -187,56 +193,63 @@ class CodeVerifyAPIView(APIView):
 
         for test in testcases:
             try:
-
+                # Wrap the code dynamically
                 wrapped_code = wrap_user_code(code, language, test.input_data)
                 parsed_input = TestCaseSerializer()._parse_input(test.input_data)
-                if isinstance(parsed_input, dict):
-                    stdin = str(parsed_input)  # JSON-like string for dict
-                elif isinstance(parsed_input, tuple) and len(parsed_input) == 2 and isinstance(parsed_input[1], (int, float)):
-                    stdin = str(parsed_input[0])  # Send array only, function handles addend
-                elif isinstance(parsed_input, (list, tuple)):
-                    stdin = str(parsed_input)  # List/tuple as string
+
+                # Adjust stdin based on language and parsed input
+                if language == "python":
+                    stdin = test.input_data  # Raw input string for Python wrapper
+                elif language in ["javascript", "java", "cpp"]:
+                    if isinstance(parsed_input, (dict, tuple)) and len(parsed_input) == 2 and isinstance(parsed_input[1], (int, float)):
+                        stdin = str(parsed_input[0])  # Array only for addend case
+                    elif isinstance(parsed_input, (list, tuple)):
+                        stdin = str(parsed_input).replace(" ", "")  # Comma-separated list
+                    else:
+                        stdin = str(parsed_input)
                 else:
-                    stdin = str(parsed_input)  
-            except (ValueError, SyntaxError):
-                stdin = test.input_data  
+                    stdin = test.input_data
 
-            payload = {
-                "source_code": wrapped_code,
-                "language_id": LANGUAGE_MAP[language],
-                "stdin": stdin,
-            }
-            try:
-                response = requests.post(settings.JUDGE0_API_URL, json=payload, timeout=15)
-                print("judge0 Response", response)
-                if response.status_code != 201:
-                    return Response({"error": "Judge0 error", "details": response.text, "status_code": response.status_code}, status=status.HTTP_400_BAD_REQUEST)
-
-                result = response.json()
-                actual_output = (result.get("stdout") or "").strip()
-                expected_output = (test.expected_output or "").strip()
-                error_output = (result.get("stderr") or result.get("compile_output") or "").strip()
-
+                payload = {
+                    "source_code": wrapped_code,
+                    "language_id": LANGUAGE_MAP[language],
+                    "stdin": stdin,
+                    "cpu_time_limit": 2,
+                    "memory_limit": 128000,
+                }
                 try:
-                    actual_eval = ast.literal_eval(actual_output)
-                    expected_eval = ast.literal_eval(expected_output)
-                    passed = actual_eval == expected_eval
-                except Exception:
-                    passed = actual_output == expected_output
+                    response = requests.post(settings.JUDGE0_API_URL, json=payload, timeout=15)
+                    print("judge0 Response", response)
+                    if response.status_code != 201:
+                        return Response({"error": "Judge0 error", "details": response.text, "status_code": response.status_code}, status=status.HTTP_400_BAD_REQUEST)
 
-                if not passed:
-                    all_passed = False
+                    result = response.json()
+                    actual_output = (result.get("stdout") or "").strip()
+                    expected_output = (test.expected_output or "").strip()
+                    error_output = (result.get("stderr") or result.get("compile_output") or "").strip()
 
-                results.append({
-                    "test_case_id": test.id,
-                    "input": test.input_data,
-                    "expected": expected_output,
-                    "actual": actual_output,
-                    "error": error_output if error_output else None,
-                    "passed": passed,
-                })
-            except requests.RequestException as e:
-                return Response({"error": "Request failed", "details": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+                    try:
+                        actual_eval = ast.literal_eval(actual_output) if actual_output else actual_output
+                        expected_eval = ast.literal_eval(expected_output) if expected_output else expected_output
+                        passed = actual_eval == expected_eval
+                    except (ValueError, SyntaxError):
+                        passed = actual_output == expected_output
+
+                    if not passed:
+                        all_passed = False
+
+                    results.append({
+                        "test_case_id": test.id,
+                        "input": test.input_data,
+                        "expected": expected_output,
+                        "actual": actual_output,
+                        "error": error_output if error_output else None,
+                        "passed": passed,
+                    })
+                except requests.RequestException as e:
+                    return Response({"error": "Request failed", "details": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            except Exception as e:
+                return Response({"error": f"Processing failed for test case {test.id}: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         solved_data = None
         if all_passed:
@@ -261,6 +274,7 @@ class CodeVerifyAPIView(APIView):
             "results": results,
             "solved_code": solved_data
         }, status=status.HTTP_200_OK)
+
     def get(self, request, question_id):
         try:
             question = Question.objects.get(question_id=question_id)

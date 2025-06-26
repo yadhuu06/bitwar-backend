@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     'admin_panel',
     'problems',
     'channels',
+    'battle',
 
     
 ]

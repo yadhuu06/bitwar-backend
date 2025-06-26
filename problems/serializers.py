@@ -22,14 +22,17 @@ class TestCaseSerializer(serializers.ModelSerializer):
         fields = ['id', 'input_data', 'expected_output', 'is_sample', 'formatted_input']
 
     def validate_input_data(self, value):
-        # Custom parser to handle new input formats: "a,b", "[1,2,3]", "[1,2,3],4"
+        # Custom parser to handle input formats: "a,b", "[1,2,3]", "[1,2,3],4"
         try:
             parsed_data = self._parse_input(value)
             if not parsed_data:
                 raise ValueError("Invalid input format")
-            # Validate the parsed result as a Python literal if applicable
+            # Validate the parsed result as a Python literal
             if isinstance(parsed_data, (list, tuple, dict)):
                 ast.literal_eval(str(parsed_data))
+            # Ensure comma-separated inputs have exactly two values
+            if isinstance(parsed_data, tuple) and len(parsed_data) != 2:
+                raise ValueError("Input must be two comma-separated values (e.g., '15,5')")
             return value
         except (ValueError, SyntaxError):
             raise serializers.ValidationError("input_data must be a valid format (e.g., '12,34', '[1,2,3]', or '[1,2,3],4')")
@@ -37,15 +40,12 @@ class TestCaseSerializer(serializers.ModelSerializer):
     def _parse_input(self, value):
         # Remove leading/trailing whitespace
         value = value.strip()
-        # Case 1: Comma-separated values (e.g., "12,34" -> {"a": 12, "b": 34})
+        # Case 1: Comma-separated values (e.g., "12,34" -> (12, 34))
         if "," in value and not value.startswith("["):
-            parts = [p.strip() for p in value.split(",")]
-            if len(parts) == 2:
-                try:
-                    return {"a": ast.literal_eval(parts[0]), "b": ast.literal_eval(parts[1])}
-                except (ValueError, SyntaxError):
-                    return tuple(ast.literal_eval(f"({value})"))
-            return tuple(ast.literal_eval(f"({value})"))
+            try:
+                return tuple(ast.literal_eval(f"({value})"))
+            except (ValueError, SyntaxError):
+                raise serializers.ValidationError("Invalid input format for comma-separated values")
         # Case 2: Array with optional addend (e.g., "[1,2,3],4" -> ([1,2,3], 4))
         match = re.match(r"\[(.*?)\](?:,(\d+))?", value)
         if match:
@@ -55,7 +55,10 @@ class TestCaseSerializer(serializers.ModelSerializer):
             addend = ast.literal_eval(addend_str) if addend_str else None
             return (array, addend) if addend is not None else array
         # Fallback: Treat as raw string and attempt literal eval
-        return ast.literal_eval(value)
+        try:
+            return ast.literal_eval(value)
+        except (ValueError, SyntaxError):
+            raise serializers.ValidationError("Invalid input format")
 
     def get_formatted_input(self, obj):
         # Format input_data for user-friendly display
@@ -64,7 +67,7 @@ class TestCaseSerializer(serializers.ModelSerializer):
             if isinstance(parsed, dict):
                 return ", ".join(f"{key} = {value}" for key, value in parsed.items())
             elif isinstance(parsed, tuple) and len(parsed) == 2 and isinstance(parsed[1], (int, float)):
-                return f"arr = {parsed[0]}, addend = {parsed[1]}"
+                return f"a = {parsed[0]}, b = {parsed[1]}"
             elif isinstance(parsed, (list, tuple)):
                 if obj.input_data.replace(" ", "").count(",") > 0 and not obj.input_data.startswith("["):
                     return ", ".join(str(x) for x in parsed)

@@ -12,14 +12,14 @@ def check_participant(user, room_id):
 
 @database_sync_to_async
 def get_participants(room_id):
-    """Retrieve all participants in a room."""
+
     return list(RoomParticipant.objects.filter(room_id=room_id).values(
         'user__username', 'role', 'status', 'ready'
     ))
 
 @database_sync_to_async
 def ensure_participant(room_id, user, status):
-    """Ensure a participant exists in a room, creating or updating as needed."""
+
     try:
         room = Room.objects.get(room_id=room_id)
         participant, created = RoomParticipant.objects.get_or_create(
@@ -49,7 +49,7 @@ def ensure_participant(room_id, user, status):
 
 @database_sync_to_async
 def update_participant_status(room_id, user, status):
-    """Update the status of a participant in a room."""
+
     try:
         participant = RoomParticipant.objects.get(room_id=room_id, user=user)
         participant.status = status
@@ -74,7 +74,7 @@ def update_participant_status(room_id, user, status):
 
 @database_sync_to_async
 def update_ready_status(room_id, user, ready):
-    """Update the ready status of a participant."""
+
     try:
         participant = RoomParticipant.objects.get(room_id=room_id, user=user)
         participant.ready = ready
@@ -85,7 +85,6 @@ def update_ready_status(room_id, user, ready):
 
 @database_sync_to_async
 def kick_participant(room_id, target_username):
-    """Kick a participant from a room."""
     try:
         participant = RoomParticipant.objects.get(
             room_id=room_id,

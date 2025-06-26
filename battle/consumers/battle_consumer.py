@@ -1,4 +1,3 @@
-# battle/consumers.py
 
 from room.consumers.base_consumer import BaseConsumer
 from room.utils.error_handler import send_error
