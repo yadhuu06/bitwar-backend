@@ -6,7 +6,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
-
+from django.utils import timezone
 import json
 import logging
 import traceback
@@ -349,6 +349,7 @@ class StartRoomAPIView(APIView):
                 return Response({'error': 'No valid questions available for this room'}, status=status.HTTP_400_BAD_REQUEST)
 
             room.status = 'Playing'
+            room.start_time=timezone.now()
             room.active_question = selected_question
             room.save()
 

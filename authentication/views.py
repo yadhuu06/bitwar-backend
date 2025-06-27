@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 CustomUser = get_user_model()
 
 class OTPThrottle(AnonRateThrottle):
-    rate = '10/hour'
+    rate = '100/hour'
 
 def generate_auth_response(user):
     refresh = RefreshToken.for_user(user)
@@ -103,29 +103,31 @@ class GenerateOTPView(APIView):
 
 import logging
 
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
-from rest_framework.permissions import AllowAny
+
 
 class VerifyOTPView(APIView):
     throttle_classes = [OTPThrottle]
     permission_classes = [AllowAny]
-
     def post(self, request):
         email = request.data.get('email')
         otp_input = request.data.get('otp')
+        print("otp",otp_input)
+        print("email",email)
+
         
         if not email or not otp_input:
             return Response({'error': 'Email and OTP are required'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             otp_instance = OTP.objects.get(email=email)
+            print("otp instance",otp_instance)
 
             if otp_instance.is_expired():
+                print("otp expired")
                 otp_instance.delete()
                 return Response({'error': 'OTP expired'}, status=status.HTTP_400_BAD_REQUEST)            
             if otp_instance.get_otp() != otp_input:
+                print("diffrent otp")
                 return Response({'error': 'Invalid OTP'}, status=status.HTTP_400_BAD_REQUEST)
             
 
@@ -142,30 +144,17 @@ class PasswordResetView(APIView):
 
     def post(self, request):
         email = request.data.get('email')
-        otp = request.data.get('otp')
         new_password = request.data.get('new_password')
 
-        if not all([email, otp, new_password]):
-            return Response({'error': 'Email, OTP, and new password are required'}, status=status.HTTP_400_BAD_REQUEST)
+        if not all([email,  new_password]):
+            return Response({'error': 'Email,  and new password are required'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             user = CustomUser.objects.get(email=email, is_active=True)
         except CustomUser.DoesNotExist:
             return Response({'error': 'User not found or inactive'}, status=status.HTTP_404_NOT_FOUND)
 
-        try:
-            otp_instance = OTP.objects.get(
-                email=email,
-                is_verified=False,
-                otp_type='forgot_password',
-                expires_at__gt=timezone.now()
-            )
-        except OTP.DoesNotExist:
-            return Response({'error': 'Invalid or expired OTP'}, status=status.HTTP_400_BAD_REQUEST)
-
-        decrypted_otp = otp_instance.get_otp()
-        if not decrypted_otp or decrypted_otp != otp:
-            return Response({'error': 'Invalid OTP'}, status=status.HTTP_400_BAD_REQUEST)
+        
 
         if len(new_password) < 8 or not any(c.isupper() for c in new_password) or not any(c in '!@#$%^&*(),.?":{}|<>' for c in new_password):
             return Response({'error': 'Password must be 8+ chars, include 1 uppercase and 1 special char'}, status=status.HTTP_400_BAD_REQUEST)
@@ -173,7 +162,7 @@ class PasswordResetView(APIView):
         user.set_password(new_password)
         user.save()
 
-        otp_instance.mark_verified()
+    
 
         return Response({'success': True, 'message': 'Password reset successfully'}, status=status.HTTP_200_OK)
 

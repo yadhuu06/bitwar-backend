@@ -20,9 +20,6 @@ from asgiref.sync import async_to_sync
 
 logger = logging.getLogger(__name__)
 
-
-
-
 class BattleQuestionAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -88,6 +85,29 @@ class QuestionVerifyAPIView(APIView):
                 logger.error(f"Room not found: {room_id}")
                 return Response({'error': 'Room not found'}, status=status.HTTP_404_NOT_FOUND)
 
+            # Check if battle has started
+            if not room.start_time:
+                logger.error(f"Battle not started for room {room_id}")
+                return Response({'error': 'Battle has not started'}, status=status.HTTP_400_BAD_REQUEST)
+
+            # Check time limit for timed mode (time_limit > 0)
+            if room.time_limit > 0:
+                elapsed_minutes = (timezone.now() - room.start_time).total_seconds() / 60
+                if elapsed_minutes > room.time_limit:
+                    room.status = 'completed'
+                    room.save()
+                    logger.info(f"Time limit exceeded for room {room_id}, marking as completed")
+                    channel_layer = get_channel_layer()
+                    async_to_sync(channel_layer.group_send)(
+                        f"battle_{room_id}",
+                        {
+                            'type': 'battle_completed',
+                            'message': 'Battle ended due to time limit',
+                            'winners': BattleResult.objects.filter(room=room).first().results if BattleResult.objects.filter(room=room).exists() else []
+                        }
+                    )
+                    return Response({'error': 'Time limit exceeded'}, status=status.HTTP_400_BAD_REQUEST)
+
             testcases = TestCase.objects.filter(question=question)
             if not testcases:
                 logger.error(f"No test cases found for question {question_id}")
@@ -133,7 +153,7 @@ class QuestionVerifyAPIView(APIView):
                     user_ranking.save()
                     logger.info(f"Assigned {points} points to {request.user.username} for position {position}")
 
-                # Check if battle should end
+                # Check if battle should end (for both ranked and timed modes)
                 max_winners = {2: 1, 5: 3, 10: 5}.get(room.capacity, 1)
                 if len(existing_results) + 1 >= max_winners:
                     room.status = 'completed'
@@ -171,11 +191,31 @@ class QuestionVerifyAPIView(APIView):
             logger.error(f"Error verifying code for question {question_id}: {str(e)}")
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+
     def assign_ranking_points(self, capacity, position):
-        """Assign ranking points based on room capacity and position."""
         points_map = {
             2: {1: 50, 2: 0},
             5: {1: 70, 2: 40, 3: 0, 4: 0, 5: 0},
             10: {1: 100, 2: 60, 3: 40, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0, 10: 0}
         }
         return points_map.get(capacity, {1: 50}).get(position, 0)
+
+
+class BattleResultsAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, room_id):
+        try:
+            room = get_object_or_404(Room, room_id=room_id)
+            battle_result = BattleResult.objects.filter(room=room).first()
+            if not battle_result:
+                logger.info(f"No battle results found for room {room_id}")
+                return Response({'results': []}, status=status.HTTP_200_OK)
+            
+            logger.info(f"Fetched battle results for room {room_id}")
+            return Response({'results': battle_result.results}, status=status.HTTP_200_OK)
+        except Exception as e:
+            logger.error(f"Error fetching battle results for room {room_id}: {str(e)}")
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        
