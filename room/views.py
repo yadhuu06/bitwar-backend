@@ -14,6 +14,8 @@ from .models import Room, RoomParticipant
 from .serializers import RoomCreateSerializer
 from problems.models import Question, Example
 from .utils.battle import select_random_question
+from authentication.models import CustomUser
+from django.db.models import F
 
 logger = logging.getLogger(__name__)
 
@@ -327,6 +329,7 @@ class StartRoomAPIView(APIView):
                 return Response({'error': 'Only the host can start the room'}, status=status.HTTP_403_FORBIDDEN)
 
             participants = RoomParticipant.objects.filter(room=room).values('user__username', 'role', 'status', 'ready')
+            
             non_host_participants = [p for p in participants if p['role'] != 'host']
             capacity = room.capacity
             min_required = 2
@@ -347,6 +350,11 @@ class StartRoomAPIView(APIView):
             if not selected_question:
                 logger.error(f"No valid questions found for room {room_id}")
                 return Response({'error': 'No valid questions available for this room'}, status=status.HTTP_400_BAD_REQUEST)
+            participant_users = CustomUser.objects.filter(
+                room_participations__room=room
+            ).distinct()
+            participant_users.update(total_battles=F('total_battles') + 1)
+
 
             room.status = 'Playing'
             room.start_time=timezone.now()

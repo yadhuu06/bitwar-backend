@@ -39,7 +39,15 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = CustomUser
-        fields = ['username', 'email', 'created_at', 'profile_picture', 'is_staff']
+        fields = [
+            'username',
+            'email',
+            'created_at',
+            'profile_picture',
+            'is_staff',
+            'total_battles',
+            'battles_won',
+        ]
 
     def get_profile_picture(self, obj):
         if obj.profile_picture:
@@ -48,7 +56,6 @@ class UserSerializer(serializers.ModelSerializer):
                 return path  
             return f"{settings.MEDIA_URL}{path}"  
         return f"{settings.MEDIA_URL}profile_pics/default/coding_hacker.png"
-
 
     def validate_username(self, value):
         user = self.instance

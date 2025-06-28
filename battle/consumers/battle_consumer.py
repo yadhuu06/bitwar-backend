@@ -14,7 +14,6 @@ class BattleConsumer(BaseConsumer):
         await self.channel_layer.group_add(self.group_name, self.channel_name)
         await self.accept()
         
-        # Start sending time updates for timed mode
         room = await sync_to_async(Room.objects.filter(room_id=self.room_id).first)()
         if room and room.start_time and room.time_limit > 0:
             asyncio.create_task(self.send_time_updates())
@@ -40,6 +39,8 @@ class BattleConsumer(BaseConsumer):
             await self.battle_started(data)
         elif message_type == 'start_countdown':
             await self.start_countdown(data)
+        elif message_type == 'time_update':
+            await self.time_update(data)
         else:
             await send_error(self, f'Unknown message type: {message_type}')
 
@@ -65,12 +66,16 @@ class BattleConsumer(BaseConsumer):
         })
 
     async def battle_completed(self, event):
+        room = await sync_to_async(Room.objects.filter(room_id=self.room_id).first)()
+        max_winners = {2: 1, 5: 2, 10: 3}.get(room.capacity, 1)
+        winners = event.get('winners', [])[:max_winners]
         await self.send_json({
             'type': 'battle_completed',
             'username': event.get('user', ''),
             'question_id': event.get('question_id', ''),
-            'winners': event.get('winners', []),
-            'message': event.get('message', 'Battle completed!')
+            'winners': winners,
+            'room_capacity': room.capacity,
+            'message': event.get('message', 'Battle Ended!')
         })
 
     async def battle_started(self, event):
@@ -87,6 +92,12 @@ class BattleConsumer(BaseConsumer):
             'message': event.get('message', f"Battle starting in {event.get('countdown', 0)} seconds!"),
             'countdown': event.get('countdown', 0),
             'question_id': event.get('question_id', '')
+        })
+
+    async def time_update(self, event):
+        await self.send_json({
+            'type': 'time_update',
+            'remaining_seconds': event['remaining_seconds']
         })
 
     async def send_time_updates(self):
@@ -109,12 +120,13 @@ class BattleConsumer(BaseConsumer):
                     self.group_name,
                     {
                         'type': 'battle_completed',
-                        'message': 'Battle ended due to time limit',
-                        'winners': battle_result.results if battle_result else []
+                        'message': 'Battle ended due to time limit!',
+                        'winners': battle_result.results[:{2: 1, 5: 2, 10: 3}.get(room.capacity, 1)] if battle_result else [],
+                        'room_capacity': room.capacity
                     }
                 )
                 break
-            await asyncio.sleep(10) 
+            await asyncio.sleep(10)
             room = await sync_to_async(Room.objects.filter(room_id=self.room_id).first)()
 
     def get_ordinal(self, n):

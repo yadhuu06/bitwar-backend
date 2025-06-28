@@ -166,7 +166,7 @@ class RoomLobbyConsumer(BaseConsumer, WebSocketAuthMixin):
                 return
 
         logger.info(f"[START_COUNTDOWN] Room {self.room_id} starting with question {room.active_question.id}")
-        # Broadcast battle_ready with question details
+
         await self._broadcast({
             'type': 'battle_ready',
             'room_id': str(room.room_id),
@@ -177,7 +177,6 @@ class RoomLobbyConsumer(BaseConsumer, WebSocketAuthMixin):
             }
         })
 
-        # Server-side countdown
         countdown = data.get('countdown', 5)
         for i in range(countdown, -1, -1):
             await self._broadcast({
@@ -187,7 +186,6 @@ class RoomLobbyConsumer(BaseConsumer, WebSocketAuthMixin):
             })
             await asyncio.sleep(1)
 
-        # Broadcast battle_started
         logger.info(f"[BATTLE_STARTED] Room {self.room_id} navigating to battle with question {room.active_question.id}")
         await self._broadcast({
             'type': 'battle_started',

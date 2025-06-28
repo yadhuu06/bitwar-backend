@@ -22,15 +22,15 @@ class TestCaseSerializer(serializers.ModelSerializer):
         fields = ['id', 'input_data', 'expected_output', 'is_sample', 'formatted_input']
 
     def validate_input_data(self, value):
-        # Custom parser to handle input formats: "a,b", "[1,2,3]", "[1,2,3],4"
+
         try:
             parsed_data = self._parse_input(value)
             if not parsed_data:
                 raise ValueError("Invalid input format")
-            # Validate the parsed result as a Python literal
+
             if isinstance(parsed_data, (list, tuple, dict)):
                 ast.literal_eval(str(parsed_data))
-            # Ensure comma-separated inputs have exactly two values
+
             if isinstance(parsed_data, tuple) and len(parsed_data) != 2:
                 raise ValueError("Input must be two comma-separated values (e.g., '15,5')")
             return value
@@ -38,9 +38,9 @@ class TestCaseSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("input_data must be a valid format (e.g., '12,34', '[1,2,3]', or '[1,2,3],4')")
 
     def _parse_input(self, value):
-        # Remove leading/trailing whitespace
+
         value = value.strip()
-        # Case 1: Comma-separated values (e.g., "12,34" -> (12, 34))
+
         if "," in value and not value.startswith("["):
             try:
                 return tuple(ast.literal_eval(f"({value})"))

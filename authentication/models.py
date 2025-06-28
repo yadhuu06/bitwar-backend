@@ -60,6 +60,9 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     total_battles=models.IntegerField(default=0,null=True)
     battles_won=models.IntegerField(default=0)
     total_contributions =models.IntegerField(default=0)
+    last_win = models.DateField(null=True, blank=True)
+    battle_streak=models.IntegerField(default=0)
+    
     accepted_contributions=models.IntegerField(default=0)
 
 
