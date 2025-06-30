@@ -38,17 +38,19 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     )
 
     def get_default_profile_picture():
-        return 'profile_pics/default/coding_hacker.png'
+       return 'https://ik.imagekit.io/sqekkzzkx/Bit%20Code/ChatGPT%20Image%20Apr%207,%202025,%2002_30_45%20PM.png?updatedAt=1751185724779'
 
 
     user_id = models.AutoField(primary_key=True)
     email = models.EmailField(unique=True, db_index=True)  
     username = models.CharField(max_length=150, unique=True, db_index=True)  
-    profile_picture = models.ImageField(
-    upload_to='profile_pics/%Y/%m/%d/',
+    profile_picture = models.URLField(
+    max_length=500,
     blank=True,
     null=True,
-    default=get_default_profile_picture )
+    default=get_default_profile_picture
+    )
+
 
     created_at = models.DateTimeField(default=timezone.now, db_index=True)  
     updated_at = models.DateTimeField(auto_now=True)

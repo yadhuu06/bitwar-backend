@@ -190,3 +190,21 @@ class QuestionVerifyAPIView(APIView):
             10: {1: 100, 2: 60, 3: 40, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0, 10: 0}
         }
         return points_map.get(capacity, {1: 50}).get(position, 0)
+
+class GlobalRankingAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):  
+        rankings = UserRanking.objects.select_related('user').order_by('-points')[:100]
+        ranking_data = []
+        for i in ranking_data:
+            print("data---------",i)
+
+        for index, rank in enumerate(rankings, start=1):
+            ranking_data.append({
+                'rank': index,
+                'username': rank.user.username,
+                'points': rank.points
+            })
+
+        return Response(ranking_data)

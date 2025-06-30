@@ -24,7 +24,7 @@ class RegisterSerializer(serializers.ModelSerializer):
             username=validated_data['username'],
             password=validated_data['password']
         )
-        # Clear OTP after successful registration
+
         OTP.objects.filter(email=validated_data['email']).delete()
         return user
 class OTPSerializer(serializers.ModelSerializer):
@@ -35,7 +35,7 @@ class OTPSerializer(serializers.ModelSerializer):
         print ("fields",fields)
 
 class UserSerializer(serializers.ModelSerializer):
-    profile_picture = serializers.SerializerMethodField()
+    profile_picture = serializers.URLField(required=False, allow_blank=True)
 
     class Meta:
         model = CustomUser
@@ -47,20 +47,18 @@ class UserSerializer(serializers.ModelSerializer):
             'is_staff',
             'total_battles',
             'battles_won',
+            'user_id'
         ]
-
-    def get_profile_picture(self, obj):
-        if obj.profile_picture:
-            path = str(obj.profile_picture)
-            if path.startswith("http://") or path.startswith("https://"):
-                return path  
-            return f"{settings.MEDIA_URL}{path}"  
-        return f"{settings.MEDIA_URL}profile_pics/default/coding_hacker.png"
 
     def validate_username(self, value):
         user = self.instance
         if user and user.username != value and CustomUser.objects.filter(username=value).exists():
             raise serializers.ValidationError("Username has already been taken")
+        return value
+
+    def validate_profile_picture(self, value):
+        if value and not (value.startswith("http://") or value.startswith("https://")):
+            raise serializers.ValidationError("Profile picture must be a valid URL")
         return value
 
     def update(self, instance, validated_data):

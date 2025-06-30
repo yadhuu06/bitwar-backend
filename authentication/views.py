@@ -15,6 +15,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken
 from rest_framework_simplejwt.exceptions import TokenError
 from social_django.utils import psa
+from imagekitio import ImageKit
 from decouple import config
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
@@ -318,18 +319,42 @@ class AdminDashboardView(APIView):
             'role': 'admin',
         }, status=status.HTTP_200_OK)
 
+class ImageKitAuthView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        print("public key:",settings.IMAGEKIT_PUBLIC_KEY)
+        print("private:",settings.IMAGEKIT_PRIVATE_KEY)
+        logger.info("ImageKit auth endpoint called----------------------------------------------------------")
+        try:
+            imagekit = ImageKit(
+                public_key=settings.IMAGEKIT_PUBLIC_KEY,
+                private_key=settings.IMAGEKIT_PRIVATE_KEY,
+                url_endpoint=settings.IMAGEKIT_URL_ENDPOINT
+            )
+            auth_params = imagekit.get_authentication_parameters()
+            logger.info(f"Generated ImageKit auth params for user: {request.user.username}")
+            return Response(auth_params)
+        except Exception as e:
+            logger.error(f"Error generating ImageKit auth params: {str(e)}")
+            return Response({"error": "Failed to generate auth parameters"}, status=status.HTTP_400_BAD_REQUEST)
+
 class ProfileView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
         user = request.user
         serializer = UserSerializer(user)
+        logger.info(f"Profile retrieved for user: {user.username}")
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     def patch(self, request):
         user = request.user
+        logger.info(f"Profile update requested for user: {user.username}, data: {request.data}")
         serializer = UserSerializer(user, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
+            logger.info(f"Profile updated successfully for user: {user.username}")
             return Response(serializer.data, status=status.HTTP_200_OK)
+        logger.error(f"Profile update failed for user: {user.username}, errors: {serializer.errors}")
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
