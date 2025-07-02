@@ -34,7 +34,8 @@ def get_chat_history(room_id):
             {
                 'message': msg.message,
                 'sender': msg.sender,
-                'timestamp': msg.timestamp.strftime('%I:%M %p'),
+                'timestamp': msg.timestamp.isoformat(),  
+
                 'is_system': msg.is_system
             } for msg in messages
         ]

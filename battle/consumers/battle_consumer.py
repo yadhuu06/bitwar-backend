@@ -31,7 +31,9 @@ class BattleConsumer(BaseConsumer):
 
     async def handle_message(self, data):
         message_type = data.get('type')
-        if message_type == 'code_verified':
+        if message_type=='ping':
+                await self.send(text_data=json.dumps({"type": "pong"}))
+        elif message_type == 'code_verified':
             await self.handle_code_verified(data)
         elif message_type == 'battle_completed':
             await self.battle_completed(data)

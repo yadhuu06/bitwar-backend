@@ -33,3 +33,4 @@ social-auth-core==4.5.4
 sqlparse==0.5.3
 typing-extensions==4.13.0
 urllib3==2.2.3
+celery>=5.3.1

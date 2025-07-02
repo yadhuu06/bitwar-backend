@@ -13,7 +13,7 @@ from battle.models import BattleResult, UserRanking
 from room.models import Room
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
-
+from .tasks import cleanup_room_data
 logger = logging.getLogger(__name__)
 
 class BattleQuestionAPIView(APIView):
@@ -148,10 +148,11 @@ class QuestionVerifyAPIView(APIView):
                     logger.info(f"Assigned {points} points to {request.user.username} for position {position}")
 
                 max_winners = {2: 1, 5: 2, 10: 3}.get(room.capacity, 1)
-                if len(existing_results) + 1 >= max_winners:
+                if len(existing_results) >= max_winners:
                     room.status = 'completed'
                     room.save()
-                    logger.info(f"Room {room_id} battle completed with {len(existing_results) + 1} winners")
+                    cleanup_room_data.apply_async((room.room_id,), countdown=120)
+                    logger.info(f"Room {room_id} battle completed with {len(existing_results) } winners")
                     channel_layer = get_channel_layer()
                     async_to_sync(channel_layer.group_send)(
                         f"battle_{room_id}",

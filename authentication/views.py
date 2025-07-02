@@ -323,8 +323,7 @@ class ImageKitAuthView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        print("public key:",settings.IMAGEKIT_PUBLIC_KEY)
-        print("private:",settings.IMAGEKIT_PRIVATE_KEY)
+
         logger.info("ImageKit auth endpoint called----------------------------------------------------------")
         try:
             imagekit = ImageKit(

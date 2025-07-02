@@ -1,18 +1,10 @@
 from channels.db import database_sync_to_async
 from room.models import Room, RoomParticipant
 from django.core.exceptions import ObjectDoesNotExist
-
+from battle.tasks import cleanup_room_data
 @database_sync_to_async
 def get_room(room_id):
-    """
-    Retrieve a room by its ID with related active_question.
-    
-    Args:
-        room_id (str): The ID of the room to retrieve.
-    
-    Returns:
-        Room: The Room model instance, or None if not found.
-    """
+
     try:
         return Room.objects.select_related('active_question').get(room_id=room_id)
     except Room.DoesNotExist:
@@ -20,12 +12,7 @@ def get_room(room_id):
 
 @database_sync_to_async
 def get_room_list():
-    """
-    Retrieve a list of active rooms with their participants.
-    
-    Returns:
-        list: A list of dictionaries containing room details and participants.
-    """
+
     try:
         rooms = Room.objects.filter(is_active=True).prefetch_related('participants').values(
             'room_id', 'name', 'owner__username', 'topic', 'difficulty',
@@ -48,20 +35,13 @@ def get_room_list():
 
 @database_sync_to_async
 def close_room(room_id):
-    """
-    Close a room by setting is_active to False and status to 'closed'.
-    
-    Args:
-        room_id (str): The ID of the room to close.
-    
-    Returns:
-        bool: True if the room was closed successfully, False otherwise.
-    """
+
     try:
         room = Room.objects.get(room_id=room_id)
         room.is_active = False
         room.status = 'closed'
         room.save()
+        cleanup_room_data.apply_async((room.room_id,), countdown=120)
         return True
     except Room.DoesNotExist:
         return False
