@@ -2,6 +2,9 @@ from rest_framework import serializers
 from authentication.models import CustomUser
 from room.models import Room, RoomParticipant
 from authentication.models import CustomUser
+from battle.models import UserRanking 
+
+
 
 class UserSerializer(serializers.ModelSerializer):
     id = serializers.UUIDField(source='user_id', read_only=True)
@@ -15,6 +18,13 @@ class RoomParticipantSerializer(serializers.ModelSerializer):
     class Meta:
         model = RoomParticipant
         fields = ['user__username', 'role']
+
+class UserRankingSerializer(serializers.ModelSerializer):
+    user = UserSerializer(read_only=True)
+
+    class Meta:
+        model = UserRanking
+        fields = ['user', 'points']
 
 class RoomSerializer(serializers.ModelSerializer):
     owner__username = serializers.CharField(source='owner.username', read_only=True)

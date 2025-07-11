@@ -9,6 +9,13 @@ from authentication.models import CustomUser
 from room.models import Room
 from .serializers import RoomSerializer
 from .serializers import UserSerializer
+from problems.models import Question
+from room.models import Room
+from authentication. models import CustomUser
+from battle.models import UserRanking
+from . serializers import UserRankingSerializer
+
+
 
 class UsersListView(APIView):
     permission_classes = [IsAuthenticated, IsAdminUser]
@@ -77,18 +84,29 @@ class RoomListView(APIView):
         rooms = Room.objects.all()
         serializer = RoomSerializer(rooms, many=True)
         return Response({'battles': serializer.data}, status=status.HTTP_200_OK)
-
+    
+    
 class AdminDashboardView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsAdminUser]
 
     def get(self, request):
         user = request.user
         if not user.is_superuser:
             return Response({"error": "Admin access required"}, status=status.HTTP_403_FORBIDDEN)
+
+        active_rooms = Room.objects.filter(status='active').count()
+        active_matches = Room.objects.filter(status='playing').count()
+        active_questions = Question.objects.filter(is_validate=True).count()
+        total_users = CustomUser.objects.filter(is_blocked=False).count()
+        top_5_ranks = UserRanking.objects.select_related('user').order_by('-points')[:5]
+
+        serialized_top_users = UserRankingSerializer(top_5_ranks, many=True).data
+
         return Response({
             'message': f"Welcome to the Admin Dashboard, {user.email}!",
-            'email': user.email,
-            'username': user.username,
-            'role': 'admin',
+            'active_matches': active_matches,
+            'active_questions': active_questions,
+            'active_rooms': active_rooms,
+            'total_users': total_users,
+            'top_users': serialized_top_users
         }, status=status.HTTP_200_OK)
-        
