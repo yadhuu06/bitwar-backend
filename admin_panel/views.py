@@ -77,3 +77,18 @@ class RoomListView(APIView):
         rooms = Room.objects.all()
         serializer = RoomSerializer(rooms, many=True)
         return Response({'battles': serializer.data}, status=status.HTTP_200_OK)
+
+class AdminDashboardView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        if not user.is_superuser:
+            return Response({"error": "Admin access required"}, status=status.HTTP_403_FORBIDDEN)
+        return Response({
+            'message': f"Welcome to the Admin Dashboard, {user.email}!",
+            'email': user.email,
+            'username': user.username,
+            'role': 'admin',
+        }, status=status.HTTP_200_OK)
+        

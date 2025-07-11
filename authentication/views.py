@@ -112,9 +112,6 @@ class VerifyOTPView(APIView):
     def post(self, request):
         email = request.data.get('email')
         otp_input = request.data.get('otp')
-        print("otp",otp_input)
-        print("email",email)
-
         
         if not email or not otp_input:
             return Response({'error': 'Email and OTP are required'}, status=status.HTTP_400_BAD_REQUEST)
@@ -282,7 +279,6 @@ class LogoutView(APIView):
                 logger.warning("Logout attempted without refresh token")
                 return Response({"error": "Refresh token required"}, status=status.HTTP_400_BAD_REQUEST)
 
-            logger.info(f"Logout request with refresh token: {refresh_token}")
             token = RefreshToken(refresh_token)
             token.blacklist()
             logger.info("User successfully logged out")
@@ -305,19 +301,7 @@ class UserDashboardView(APIView):
             'user': serializer.data
         }, status=status.HTTP_200_OK)
 
-class AdminDashboardView(APIView):
-    permission_classes = [IsAuthenticated]
 
-    def get(self, request):
-        user = request.user
-        if not user.is_superuser:
-            return Response({"error": "Admin access required"}, status=status.HTTP_403_FORBIDDEN)
-        return Response({
-            'message': f"Welcome to the Admin Dashboard, {user.email}!",
-            'email': user.email,
-            'username': user.username,
-            'role': 'admin',
-        }, status=status.HTTP_200_OK)
 
 class ImageKitAuthView(APIView):
     permission_classes = [IsAuthenticated]

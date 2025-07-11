@@ -1,4 +1,6 @@
 import re
+
+import logging
 import requests
 from django.conf import settings
 from django.db import transaction
@@ -20,12 +22,16 @@ from .serializers import (
 import ast
 from .utils import extract_function_name, wrap_user_code, has_restricted_main_block
 
+
+logger = logging.getLogger(__name__)
+
+
 class StandardResultsSetPagination(PageNumberPagination):
     page_size = 10
     page_size_query_param = 'page_size'
     max_page_size = 100
 
-class QuestionCreateAPIView(APIView):
+class  QuestionCreateAPIView(APIView):
     permission_classes = [IsAuthenticated, IsAdminUser]
 
     def post(self, request):
@@ -61,16 +67,32 @@ class QuestionCreateAPIView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class QuestionDetailAPIView(APIView):
-    permission_classes = [IsAuthenticated, IsAdminUser]
+    permission_classes = [IsAuthenticated] 
 
     def get(self, request, question_id):
+        print("callled detailsview")
+        logger.info(f"User: {request.user}, Is authenticated: {request.user.is_authenticated}, Is staff: {request.user.is_staff}")
+        logger.info(f"Received question_id: {question_id}, Type: {type(question_id)}")
         try:
-            question = Question.objects.get(question_id=question_id)
-        except Question.DoesNotExist:
-            return Response({"error": "Question not found"}, status=status.HTTP_404_NOT_FOUND)
-        serializer = QuestionListSerializer(question)
-        return Response(serializer.data, status=status.HTTP_200_OK)
 
+            all_questions = Question.objects.all().values('question_id', 'title')
+            logger.debug(f"All questions in database: {list(all_questions)}")
+            
+
+            query = Question.objects.filter(question_id=question_id).query
+            logger.debug(f"Raw SQL query: {str(query)}")
+            
+            question = Question.objects.get(question_id=question_id)
+            logger.info(f"Found question: {question.title} (ID: {question.question_id}, Type: {type(question.question_id)})")
+            serializer = QuestionListSerializer(question)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except Question.DoesNotExist:
+            logger.warning(f"Question not found for ID: {question_id}")
+            return Response({"error": "Question not found"}, status=status.HTTP_404_NOT_FOUND)
+        except Exception as e:
+            logger.error(f"Unexpected error for question_id {question_id}: {str(e)}")
+            return Response({"error": f"Unexpected error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
 class QuestionsAPIView(APIView):
     permission_classes = [IsAuthenticated, IsAdminUser]
 
@@ -93,7 +115,7 @@ class TestCaseListCreateAPIView(APIView):
         search = request.query_params.get('search', '')
         is_sample = request.query_params.get('is_sample', None)
         if search:
-            # Updated to include formatted_input in search for better user experience
+
             test_cases = test_cases.filter(input_data__icontains=search) | \
                          test_cases.filter(expected_output__icontains=search)
         if is_sample is not None:
