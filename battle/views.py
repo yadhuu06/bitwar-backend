@@ -15,6 +15,7 @@ from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 from .tasks import cleanup_room_data
 logger = logging.getLogger(__name__)
+from . tasks import cleanup_room_data
 
 class BattleQuestionAPIView(APIView):
     permission_classes = [IsAuthenticated]
@@ -93,7 +94,9 @@ class QuestionVerifyAPIView(APIView):
                 elapsed_minutes = (timezone.now() - room.start_time).total_seconds() / 60
                 if elapsed_minutes > room.time_limit:
                     room.status = 'completed'
+
                     room.save()
+                    cleanup_room_data.apply_async((room.room_id,), countdown=5 * 60)
                     logger.info(f"Time limit exceeded for room {room_id}, marking as completed")
                     channel_layer = get_channel_layer()
                     async_to_sync(channel_layer.group_send)(
@@ -128,7 +131,7 @@ class QuestionVerifyAPIView(APIView):
                 existing_results = battle_result.results
                 if any(result['username'] == request.user.username for result in existing_results):
                     logger.info(f"User {request.user.username} already submitted for room {room_id}")
-                    return Response({'message': 'You have already submitted a correct solution'}, status=status.HTTP_200_OK)
+                    return Response({'message': 'You have already submitted a correct solution', 'all_passed': True}, status=status.HTTP_200_OK)
 
                 position = len(existing_results) + 1
                 battle_result.add_participant_result(
@@ -136,6 +139,8 @@ class QuestionVerifyAPIView(APIView):
                     position=position,
                     completion_time=timezone.now()
                 )
+                verification_result['position'] = position
+                logger.info(f"User {request.user.username} submitted correct solution, position: {position}")
 
                 if room.is_ranked:
                     points = self.assign_ranking_points(room.capacity, position)
@@ -148,12 +153,13 @@ class QuestionVerifyAPIView(APIView):
                     logger.info(f"Assigned {points} points to {request.user.username} for position {position}")
 
                 max_winners = {2: 1, 5: 2, 10: 3}.get(room.capacity, 1)
-                if len(existing_results) >= max_winners:
+                if len(existing_results) + 1 >= max_winners:
                     room.status = 'completed'
                     room.save()
-                    cleanup_room_data.apply_async((room.room_id,), countdown=120)
-                    logger.info(f"Room {room_id} battle completed with {len(existing_results) } winners")
+                    logger.info(f"Room {room_id} battle completed with {len(existing_results) + 1} winners")
                     channel_layer = get_channel_layer()
+                    cleanup_room_data.apply_async((room.room_id,), countdown=5 * 60)
+                    print("cleaning started and channel send waiting")
                     async_to_sync(channel_layer.group_send)(
                         f"battle_{room_id}",
                         {
@@ -161,10 +167,13 @@ class QuestionVerifyAPIView(APIView):
                             'user': request.user.username,
                             'question_id': str(question_id),
                             'winners': battle_result.results[:max_winners],
-                            'room_capacity': room.capacity,
+                            'room_capacity': room.capacity,+
                             'message': 'Battle Ended!'
                         }
+
                     )
+                    print("channel sended")
+                    
                 else:
                     channel_layer = get_channel_layer()
                     async_to_sync(channel_layer.group_send)(
@@ -175,7 +184,9 @@ class QuestionVerifyAPIView(APIView):
                             'position': position,
                             'completion_time': timezone.now().isoformat()
                         }
+
                     )
+                
 
             logger.info(f"Code verification {'successful' if verification_result['all_passed'] else 'failed'} for user {request.user.username} in room {room_id}")
             return Response(verification_result, status=status.HTTP_200_OK)
@@ -191,6 +202,8 @@ class QuestionVerifyAPIView(APIView):
             10: {1: 100, 2: 60, 3: 40, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0, 10: 0}
         }
         return points_map.get(capacity, {1: 50}).get(position, 0)
+    
+
 
 class GlobalRankingAPIView(APIView):
     permission_classes = [IsAuthenticated]

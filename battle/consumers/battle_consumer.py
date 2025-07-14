@@ -7,12 +7,24 @@ from django.utils import timezone
 import json
 import asyncio
 
+
+
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 class BattleConsumer(BaseConsumer):
     async def connect(self):
         self.room_id = self.scope['url_route']['kwargs']['room_id']
         self.group_name = f"battle_{self.room_id}"
         await self.channel_layer.group_add(self.group_name, self.channel_name)
         await self.accept()
+        username=self.scope["user"]
+        logger.info(f"[CONNECTED] joined BATTLEEE room {self.room_id}")
+    
+        
+
         
         room = await sync_to_async(Room.objects.filter(room_id=self.room_id).first)()
         if room and room.start_time and room.time_limit > 0:
@@ -134,4 +146,4 @@ class BattleConsumer(BaseConsumer):
     def get_ordinal(self, n):
         s = ["th", "st", "nd", "rd"]
         v = n % 100
-        return f"{n}{s[(v - 20) % 10] if (v - 20) % 10 < 4 else s[0]}"
+        return f"{n}{s[(v - 20) % 10] if (v - 20) % 10 < 4 else s[0]}"  

@@ -229,13 +229,13 @@ class GoogleLoginCallbackView(APIView):
         try:
             client_id = config('GOOGLE_CLIENT_ID')
             token_info = id_token.verify_oauth2_token(google_credential, google_requests.Request(), client_id)
-            logger.debug(f"Token info: {token_info}")
+           
         except ValueError as e:
             logger.error(f"Failed to validate ID token: {str(e)}")
             return Response({"error": f"Failed to verify credential: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
 
         if "email" not in token_info:
-            logger.error("No email in token info")
+            
             return Response({"error": "Failed to retrieve user information"}, status=status.HTTP_400_BAD_REQUEST)
 
         email = token_info["email"]
@@ -308,7 +308,7 @@ class ImageKitAuthView(APIView):
 
     def get(self, request):
 
-        logger.info("ImageKit auth endpoint called----------------------------------------------------------")
+        
         try:
             imagekit = ImageKit(
                 public_key=settings.IMAGEKIT_PUBLIC_KEY,
