@@ -94,7 +94,7 @@ def verify_with_judge0(code, language, testcases):
                     "error": error_output if error_output else None,
                     "passed": passed,
                 })
-            logger.info(f"Test case {test.id} result: {results[-1]}")
+            
         except requests.Timeout:
             logger.error("Judge0 request timed out")
             return {"error": "Judge0 request timed out"}
@@ -102,7 +102,6 @@ def verify_with_judge0(code, language, testcases):
             logger.error(f"Judge0 request failed: {str(e)}")
             return {"error": "Request failed", "details": str(e)}
         
-    print("did all passed",all_passed)
     return {
         "all_passed": all_passed,
         "results": results,

@@ -102,4 +102,4 @@ def wrap_user_code(code: str, language: str, input_data: str) -> str:
         return wrapper
     except Exception as e:
         logger.error(f"Failed to wrap code: {str(e)}")
-        raise ValueError(f"Failed to wrap code: {str(e)}")
+        raise ValueError(f"Failed to wrap code: {str(e)}")    

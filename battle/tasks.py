@@ -2,7 +2,12 @@ from celery import shared_task
 from .models import BattleResult
 from room.models import Room, RoomParticipant, ChatMessage
 from django.db import transaction
+from datetime import timedelta
+from django.utils import timezone
+from itertools import chain
+import logging
 
+logger = logging.getLogger(__name__)
 """
 Celery task to handle the cleanup of all database records related to a room 
 after it has either ended (status: 'completed') or been forcefully closed 
@@ -41,3 +46,27 @@ def cleanup_room_data(room_id):
 
     except Room.DoesNotExist:
         return f"[ERROR] Room with ID {room_id} does not exist."
+    
+
+@shared_task
+def cleanup_inactive_rooms():
+    now = timezone.now()
+
+    created_rooms = Room.objects.filter(
+        status='active',
+        created_at__lte=now - timedelta(hours=1)
+    )
+
+    playing_rooms = Room.objects.filter(
+        status='playing',
+        start_time__lte=now - timedelta(minutes=65)
+    )
+
+    total_cleaned = 0
+    for room in chain(created_rooms, playing_rooms):
+        cleanup_room_data.delay(str(room.room_id))
+        total_cleaned += 1
+
+    logger.warning("Scheduled celery task triggered")
+    logger.info(f"[CLEANUP-TASK] {total_cleaned} rooms scheduled for cleanup.")
+    return f"[CLEANUP-TASK] {total_cleaned} inactive/long-running rooms scheduled for cleanup."

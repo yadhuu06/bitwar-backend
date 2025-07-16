@@ -268,6 +268,14 @@ TEMPLATES = [
         },
     },
 ]
+from celery.schedules import crontab
+
+CELERY_BEAT_SCHEDULE = {
+    'cleanup-inactive-rooms-every-10-mins': {
+        'task': 'battle.tasks.cleanup_inactive_rooms',  
+        'schedule': crontab(minute='*/10'),  # Every 10 minutes
+    },
+}
 
 
 # Security Settings (for production)
