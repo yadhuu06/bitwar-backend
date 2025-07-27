@@ -1,9 +1,9 @@
 import requests
-import ast
+import json
 import logging
+import ast
 from django.conf import settings
-from problems.utils import wrap_user_code
-from problems.serializers import TestCaseSerializer
+from ..utils import validate_input_for_language, wrap_user_code
 
 logger = logging.getLogger(__name__)
 
@@ -12,6 +12,7 @@ LANGUAGE_MAP = {
     "cpp": 54,
     "java": 62,
     "javascript": 63,
+    "go": 95,
 }
 
 def verify_with_judge0(code, language, testcases):
@@ -24,18 +25,12 @@ def verify_with_judge0(code, language, testcases):
 
     for test in testcases:
         logger.info(f"Processing test case {test.id}, input: {test.input_data}, expected: {test.expected_output}")
-        try:
-            parsed_input = ast.literal_eval(test.input_data)
-            logger.info(f"Parsed input: {parsed_input}")
-            if isinstance(parsed_input, dict):
-                stdin = str(parsed_input)
-            elif isinstance(parsed_input, (list, tuple)):
-                stdin = str(parsed_input)
-            else:
-                stdin = str(parsed_input)
-        except (ValueError, SyntaxError) as e:
-            logger.error(f"Failed to parse input_data: {test.input_data}, error: {str(e)}")
-            stdin = test.input_data
+        validation_result = validate_input_for_language(code, language, test.input_data)
+        if not validation_result["valid"]:
+            logger.error(f"Input validation failed: {validation_result['error']}")
+            return {"error": validation_result["error"]}
+
+        stdin = json.dumps(validation_result["args"]) if language in ["javascript", "go"] else repr(validation_result["args"])
 
         try:
             wrapped_code = wrap_user_code(code, language, test.input_data)
@@ -48,6 +43,8 @@ def verify_with_judge0(code, language, testcases):
             "source_code": wrapped_code,
             "language_id": LANGUAGE_MAP[language],
             "stdin": stdin,
+            "cpu_time_limit": 2,
+            "memory_limit": 128000,
         }
         logger.info(f"Judge0 payload: {payload}")
 
@@ -59,19 +56,31 @@ def verify_with_judge0(code, language, testcases):
                 return {"error": "Judge0 error", "details": response.text, "status_code": response.status_code}
 
             result = response.json()
-            actual_output = (result.get("stdout") or "").strip()
-            expected_output = (test.expected_output or "").strip()
+            actual_output = (result.get("stdout") or "").strip() or None
+            expected_output = (test.expected_output or "").strip() or None
             error_output = (result.get("stderr") or result.get("compile_output") or "").strip()
 
-            if not actual_output and expected_output:
-                logger.error(f"No output produced, expected: {expected_output}")
-                passed = False
+            # Normalize outputs
+            if expected_output is None and actual_output is None:
+                passed = True
             else:
                 try:
-                    actual_eval = ast.literal_eval(actual_output) if actual_output else None
-                    expected_eval = ast.literal_eval(expected_output) if expected_output else None
+                    # Handle string outputs explicitly
+                    if expected_output and not (expected_output.startswith(('"', '[', '{', '(')) or expected_output in ('True', 'False', 'None', 'null', 'true', 'false')):
+                        expected_output_quoted = f'"{expected_output}"'
+                    else:
+                        expected_output_quoted = expected_output
+
+                    # Parse outputs based on language
+                    if language in ["javascript", "go"]:
+                        actual_eval = json.loads(actual_output) if actual_output else None
+                        expected_eval = json.loads(expected_output_quoted) if expected_output_quoted else None
+                    else:
+                        actual_eval = ast.literal_eval(actual_output) if actual_output else None
+                        expected_eval = ast.literal_eval(expected_output_quoted) if expected_output_quoted else None
                     passed = actual_eval == expected_eval
-                except Exception:
+                except (ValueError, SyntaxError, json.JSONDecodeError) as e:
+                    logger.warning(f"Parsing failed, falling back to direct comparison: actual='{actual_output}', expected='{expected_output}', error: {str(e)}")
                     passed = actual_output == expected_output
 
             if not passed:
@@ -83,7 +92,7 @@ def verify_with_judge0(code, language, testcases):
                     "actual": actual_output,
                     "error": error_output if error_output else None,
                     "passed": passed,
-                    "error_message": f"Test case failed: expected {expected_output}, got {actual_output}"
+                    "error_message": f"Test case failed: expected '{expected_output}', got '{actual_output}'"
                 })
             else:
                 results.append({
@@ -94,15 +103,12 @@ def verify_with_judge0(code, language, testcases):
                     "error": error_output if error_output else None,
                     "passed": passed,
                 })
-            
+
         except requests.Timeout:
             logger.error("Judge0 request timed out")
             return {"error": "Judge0 request timed out"}
         except requests.RequestException as e:
             logger.error(f"Judge0 request failed: {str(e)}")
             return {"error": "Request failed", "details": str(e)}
-        
-    return {
-        "all_passed": all_passed,
-        "results": results,
-    }
+
+    return {"all_passed": all_passed, "results": results}

@@ -8,7 +8,7 @@ from rest_framework.permissions import IsAuthenticated
 from problems.models import Question, TestCase, SolvedCode, Example
 from problems.serializers import QuestionListSerializer, TestCaseSerializer, ExampleSerializer
 from problems.services.judge0_service import verify_with_judge0
-from problems.utils import wrap_user_code, extract_function_name_and_params
+from problems.utils import  extract_function_name_and_params
 from battle.models import BattleResult, UserRanking
 from room.models import Room
 from channels.layers import get_channel_layer
@@ -159,7 +159,6 @@ class QuestionVerifyAPIView(APIView):
                     logger.info(f"Room {room_id} battle completed with {len(existing_results) + 1} winners")
                     channel_layer = get_channel_layer()
                     cleanup_room_data.apply_async((room.room_id,), countdown=5 * 60)
-                    print("cleaning started and channel send waiting")
                     async_to_sync(channel_layer.group_send)(
                         f"battle_{room_id}",
                         {
@@ -167,12 +166,11 @@ class QuestionVerifyAPIView(APIView):
                             'user': request.user.username,
                             'question_id': str(question_id),
                             'winners': battle_result.results[:max_winners],
-                            'room_capacity': room.capacity,+
+                            'room_capacity': room.capacity,
                             'message': 'Battle Ended!'
                         }
 
                     )
-                    print("channel sended")
                     
                 else:
                     channel_layer = get_channel_layer()
@@ -211,8 +209,7 @@ class GlobalRankingAPIView(APIView):
     def get(self, request):  
         rankings = UserRanking.objects.select_related('user').order_by('-points')[:100]
         ranking_data = []
-        for i in ranking_data:
-            print("data---------",i)
+        
 
         for index, rank in enumerate(rankings, start=1):
             ranking_data.append({

@@ -30,14 +30,13 @@ def cleanup_room_data(room_id):
         with transaction.atomic():
             room = Room.objects.get(room_id=room_id)
 
-            if room.status not in ["completed", "closed"]:
-                return f"[SKIPPED] Room {room_id} is not completed or closed."
+            
             
             RoomParticipant.objects.filter(room=room).delete()
 
             ChatMessage.objects.filter(room_id=str(room_id)).delete()
 
-            if room.status == "completed":
+            if room.status == "Completed":
                 BattleResult.objects.filter(room=room).delete()
 
             room.delete()  
@@ -52,21 +51,23 @@ def cleanup_room_data(room_id):
 def cleanup_inactive_rooms():
     now = timezone.now()
 
-    created_rooms = Room.objects.filter(
-        status='active',
+    inactive_rooms = Room.objects.filter(
+        status__in=['active', 'Playing'],
+        start_time__isnull=True,
         created_at__lte=now - timedelta(hours=1)
     )
 
-    playing_rooms = Room.objects.filter(
-        status='playing',
+
+    stale_rooms = Room.objects.filter(
+        status__in=['active', 'Playing'],
+        start_time__isnull=False,
         start_time__lte=now - timedelta(minutes=65)
     )
 
-    total_cleaned = 0
-    for room in chain(created_rooms, playing_rooms):
-        cleanup_room_data.delay(str(room.room_id))
-        total_cleaned += 1
+    rooms_to_cleanup = inactive_rooms.union(stale_rooms)
+    cleaned_count = rooms_to_cleanup.count()
 
-    logger.warning("Scheduled celery task triggered")
-    logger.info(f"[CLEANUP-TASK] {total_cleaned} rooms scheduled for cleanup.")
-    return f"[CLEANUP-TASK] {total_cleaned} inactive/long-running rooms scheduled for cleanup."
+    for room in rooms_to_cleanup:
+        cleanup_room_data.delay(str(room.room_id))  
+
+    return f'[CLEANUP-TASK] {cleaned_count} inactive/long-running rooms scheduled for cleanup.'

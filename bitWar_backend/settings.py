@@ -52,6 +52,9 @@ INSTALLED_APPS = [
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    'https://backend.bitcode.live',
+    'https://www.bitcode.live',
+    'https://bitcode.live',
 
 ]
 logger.debug(f"CORS_ALLOWED_ORIGINS: {CORS_ALLOWED_ORIGINS}")
@@ -138,7 +141,7 @@ SOCIAL_AUTH_PIPELINE = (
 SOCIAL_AUTH_LOGIN_REDIRECT_URL = 'http://127.0.0.1:5173'
 SOCIAL_AUTH_LOGIN_ERROR_URL = '/login-error/'
 SOCIAL_AUTH_JSONFIELD_ENABLED = True
-JUDGE0_API_URL = config('JUDGE0_API_URL', default='http://localhost:2358/submissions?base64_encoded=false&wait=true')
+JUDGE0_API_URL = config('JUDGE0_API_URL')
 
 FRONTEND_URL = 'http://localhost:5173' 
 BACKEND_URL='http://127.0.0.1:8000/'

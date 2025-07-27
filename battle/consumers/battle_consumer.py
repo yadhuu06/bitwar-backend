@@ -97,7 +97,8 @@ class BattleConsumer(BaseConsumer):
             'type': 'battle_started',
             'message': event.get('message', 'Battle started!'),
             'start_time': event.get('start_time', ''),
-            'time_limit': event.get('time_limit', 0)
+            'time_limit': event.get('time_limit', 0),
+
         })
 
     async def start_countdown(self, event):

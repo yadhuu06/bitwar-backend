@@ -29,10 +29,10 @@ class RegisterSerializer(serializers.ModelSerializer):
         return user
 class OTPSerializer(serializers.ModelSerializer):
     class Meta:
-        print("call came")
+        
         model = OTP
         fields = ('email','otp_type')
-        print ("fields",fields)
+        
 
 class UserSerializer(serializers.ModelSerializer):
     profile_picture = serializers.URLField(required=False, allow_blank=True)

@@ -1,5 +1,4 @@
 import re
-
 import logging
 import requests
 from django.conf import settings
@@ -19,23 +18,25 @@ from .serializers import (
     TestCaseSerializer,
     SolvedCodeSerializer
 )
-import ast
-from .utils import extract_function_name, wrap_user_code, has_restricted_main_block
-
 
 logger = logging.getLogger(__name__)
-
+LANGUAGE_MAP = {
+    "python": 71,
+    "cpp": 54,
+    "java": 62,
+    "javascript": 63,
+    "go": 95,
+}
 
 class StandardResultsSetPagination(PageNumberPagination):
     page_size = 10
     page_size_query_param = 'page_size'
     max_page_size = 100
 
-class  QuestionCreateAPIView(APIView):
+class QuestionCreateAPIView(APIView):
     permission_classes = [IsAuthenticated, IsAdminUser]
 
     def post(self, request):
-        print("Create question data:", request.data)
         serializer = QuestionInitialCreateSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
             question = serializer.save()
@@ -47,7 +48,6 @@ class  QuestionCreateAPIView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def put(self, request, question_id):
-        print("Edit question data:", request.data)
         try:
             question = Question.objects.get(question_id=question_id)
         except Question.DoesNotExist:
@@ -67,21 +67,16 @@ class  QuestionCreateAPIView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class QuestionDetailAPIView(APIView):
-    permission_classes = [IsAuthenticated] 
+    permission_classes = [IsAuthenticated]
 
     def get(self, request, question_id):
-        print("callled detailsview")
         logger.info(f"User: {request.user}, Is authenticated: {request.user.is_authenticated}, Is staff: {request.user.is_staff}")
         logger.info(f"Received question_id: {question_id}, Type: {type(question_id)}")
         try:
-
             all_questions = Question.objects.all().values('question_id', 'title')
             logger.debug(f"All questions in database: {list(all_questions)}")
-            
-
             query = Question.objects.filter(question_id=question_id).query
             logger.debug(f"Raw SQL query: {str(query)}")
-            
             question = Question.objects.get(question_id=question_id)
             logger.info(f"Found question: {question.title} (ID: {question.question_id}, Type: {type(question.question_id)})")
             serializer = QuestionListSerializer(question)
@@ -92,7 +87,7 @@ class QuestionDetailAPIView(APIView):
         except Exception as e:
             logger.error(f"Unexpected error for question_id {question_id}: {str(e)}")
             return Response({"error": f"Unexpected error: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
+
 class QuestionsAPIView(APIView):
     permission_classes = [IsAuthenticated, IsAdminUser]
 
@@ -115,7 +110,6 @@ class TestCaseListCreateAPIView(APIView):
         search = request.query_params.get('search', '')
         is_sample = request.query_params.get('is_sample', None)
         if search:
-
             test_cases = test_cases.filter(input_data__icontains=search) | \
                          test_cases.filter(expected_output__icontains=search)
         if is_sample is not None:
@@ -184,15 +178,7 @@ class TestCaseRetrieveUpdateDestroyAPIView(APIView):
         test_case.delete()
         return Response({"message": "Test case deleted successfully"}, status=status.HTTP_204_NO_CONTENT)
 
-LANGUAGE_MAP = {
-    "python": 71,
-    "cpp": 54,
-    "java": 62,
-    "javascript": 63,
-}
-
 class CodeVerifyAPIView(APIView):
-        
     def post(self, request, question_id):
         code = request.data.get("code")
         language = request.data.get("language")
@@ -207,74 +193,14 @@ class CodeVerifyAPIView(APIView):
         testcases = question.test_cases.all()
 
         if not testcases.exists():
-            print("no test case")
             return Response({"error": "No test cases available for the question"}, status=status.HTTP_404_NOT_FOUND)
 
-        all_passed = True
-        results = []
-
-        for test in testcases:
-            try:
-                # Wrap the code dynamically
-                wrapped_code = wrap_user_code(code, language, test.input_data)
-                parsed_input = TestCaseSerializer()._parse_input(test.input_data)
-
-                # Adjust stdin based on language and parsed input
-                if language == "python":
-                    stdin = test.input_data  # Raw input string for Python wrapper
-                elif language in ["javascript", "java", "cpp"]:
-                    if isinstance(parsed_input, (dict, tuple)) and len(parsed_input) == 2 and isinstance(parsed_input[1], (int, float)):
-                        stdin = str(parsed_input[0])  # Array only for addend case
-                    elif isinstance(parsed_input, (list, tuple)):
-                        stdin = str(parsed_input).replace(" ", "")  # Comma-separated list
-                    else:
-                        stdin = str(parsed_input)
-                else:
-                    stdin = test.input_data
-
-                payload = {
-                    "source_code": wrapped_code,
-                    "language_id": LANGUAGE_MAP[language],
-                    "stdin": stdin,
-                    "cpu_time_limit": 2,
-                    "memory_limit": 128000,
-                }
-                try:
-                    response = requests.post(settings.JUDGE0_API_URL, json=payload, timeout=15)
-                    print("judge0 Response", response)
-                    if response.status_code != 201:
-                        return Response({"error": "Judge0 error", "details": response.text, "status_code": response.status_code}, status=status.HTTP_400_BAD_REQUEST)
-
-                    result = response.json()
-                    actual_output = (result.get("stdout") or "").strip()
-                    expected_output = (test.expected_output or "").strip()
-                    error_output = (result.get("stderr") or result.get("compile_output") or "").strip()
-
-                    try:
-                        actual_eval = ast.literal_eval(actual_output) if actual_output else actual_output
-                        expected_eval = ast.literal_eval(expected_output) if expected_output else expected_output
-                        passed = actual_eval == expected_eval
-                    except (ValueError, SyntaxError):
-                        passed = actual_output == expected_output
-
-                    if not passed:
-                        all_passed = False
-
-                    results.append({
-                        "test_case_id": test.id,
-                        "input": test.input_data,
-                        "expected": expected_output,
-                        "actual": actual_output,
-                        "error": error_output if error_output else None,
-                        "passed": passed,
-                    })
-                except requests.RequestException as e:
-                    return Response({"error": "Request failed", "details": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-            except Exception as e:
-                return Response({"error": f"Processing failed for test case {test.id}: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        result = verify_with_judge0(code, language, testcases)
+        if "error" in result:
+            return Response({"error": result["error"], "details": result.get("details", "")}, status=status.HTTP_400_BAD_REQUEST)
 
         solved_data = None
-        if all_passed:
+        if result["all_passed"]:
             with transaction.atomic():
                 SolvedCode.objects.filter(question=question, language=language).delete()
                 solved = SolvedCode.objects.create(
@@ -292,8 +218,8 @@ class CodeVerifyAPIView(APIView):
 
         return Response({
             "message": "Verification completed.",
-            "all_passed": all_passed,
-            "results": results,
+            "all_passed": result["all_passed"],
+            "results": result["results"],
             "solved_code": solved_data
         }, status=status.HTTP_200_OK)
 
@@ -329,9 +255,7 @@ class CodeVerifyAPIView(APIView):
     def patch(self, request, question_id):
         try:
             question = Question.objects.get(question_id=question_id)
-            print("my question is ", question)
         except Question.DoesNotExist:
-            print("question not found")
             return Response({"error": "Question not found"}, status=status.HTTP_404_NOT_FOUND)
         
         if not question.is_validate:
@@ -376,13 +300,9 @@ class ContributeTestCasesAPIView(APIView):
 
     @transaction.atomic
     def post(self, request, question_id):
-        print("data", request.data)
-        print("questionID:", question_id)
         try:
             question = Question.objects.get(question_id=question_id, created_by=request.user, is_contributed=True)
-            print("question", question)
         except Question.DoesNotExist:
-            print("no question found")
             return Response({"error": "Question not found or not owned by user"}, status=status.HTTP_404_NOT_FOUND)
 
         if question.contribution_status != 'QUESTION_SUBMITTED':
