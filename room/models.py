@@ -87,6 +87,7 @@ class RoomParticipant(models.Model):
         ('joined', 'Joined'),
         ('left', 'Left'),
         ('kicked', 'Kicked'),
+        ('battle', 'Battle')
     )
 
     room = models.ForeignKey(

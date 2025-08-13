@@ -15,6 +15,7 @@ urlpatterns = [
     path('rooms/', include('room.urls')),
     path('questions/', include('problems.urls')),
     path('battle/',include('battle.urls'))
+    
 
 ]
 

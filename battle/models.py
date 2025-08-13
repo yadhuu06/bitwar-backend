@@ -36,7 +36,7 @@ class BattleResult(models.Model):
         self.save()
 
 class UserRanking(models.Model):
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='rankings')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='battle_rankings')
     points = models.PositiveIntegerField(default=0)
     last_updated = models.DateTimeField(auto_now=True)
 

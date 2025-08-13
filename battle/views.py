@@ -10,6 +10,7 @@ from problems.serializers import QuestionListSerializer, TestCaseSerializer, Exa
 from problems.services.judge0_service import verify_with_judge0
 from problems.utils import  extract_function_name_and_params
 from battle.models import BattleResult, UserRanking
+from rankings.utils import calculate_elo_1v1,calculate_elo_squad,calculate_elo_team
 from room.models import Room
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
@@ -57,6 +58,9 @@ class BattleQuestionAPIView(APIView):
             logger.error(f"Error fetching battle question {question_id}: {str(e)}")
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+
+logger = logging.getLogger(__name__)
+
 class QuestionVerifyAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -68,60 +72,54 @@ class QuestionVerifyAPIView(APIView):
         logger.info(f"Room ID received: {room_id}")
 
         if not all([code, language, room_id]):
-            logger.error("Missing required fields in request")
             return Response({'error': 'Missing required fields'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             question = Question.objects.filter(id=question_id).first()
             if not question:
-                logger.error(f"Question not found: {question_id}")
                 return Response({'error': 'Question not found'}, status=status.HTTP_404_NOT_FOUND)
 
             room = Room.objects.filter(room_id=room_id).first()
             if not room:
-                logger.error(f"Room not found: {room_id}")
                 return Response({'error': 'Room not found'}, status=status.HTTP_404_NOT_FOUND)
 
             if not room.start_time:
-                logger.error(f"Battle not started for room {room_id}")
                 return Response({'error': 'Battle has not started'}, status=status.HTTP_400_BAD_REQUEST)
 
             if room.status == 'completed':
-                logger.info(f"Battle already completed for room {room_id}")
                 return Response({'error': 'Battle has already ended'}, status=status.HTTP_400_BAD_REQUEST)
 
+            # Time limit check
             if room.time_limit > 0:
                 elapsed_minutes = (timezone.now() - room.start_time).total_seconds() / 60
                 if elapsed_minutes > room.time_limit:
                     room.status = 'completed'
-
                     room.save()
                     cleanup_room_data.apply_async((room.room_id,), countdown=5 * 60)
-                    logger.info(f"Time limit exceeded for room {room_id}, marking as completed")
                     channel_layer = get_channel_layer()
                     async_to_sync(channel_layer.group_send)(
                         f"battle_{room_id}",
                         {
                             'type': 'battle_completed',
                             'message': 'Battle ended due to time limit',
-                            'winners': BattleResult.objects.filter(room=room).first().results if BattleResult.objects.filter(room=room).exists() else [],
+                            'winners': BattleResult.objects.filter(room=room).first().results
+                                if BattleResult.objects.filter(room=room).exists() else [],
                             'room_capacity': room.capacity
                         }
                     )
                     return Response({'error': 'Time limit exceeded'}, status=status.HTTP_400_BAD_REQUEST)
 
+            # Fetch testcases
             testcases = TestCase.objects.filter(question=question)
-            if not testcases:
-                logger.error(f"No test cases found for question {question_id}")
+            if not testcases.exists():
                 return Response({'error': 'No test cases available'}, status=status.HTTP_400_BAD_REQUEST)
 
+            # Verify code
             verification_result = verify_with_judge0(code, language, testcases)
-
             if 'error' in verification_result:
-                logger.error(f"Judge0 verification failed: {verification_result['error']}")
                 return Response(verification_result, status=status.HTTP_400_BAD_REQUEST)
 
-            if verification_result['all_passed']:
+            if verification_result.get('all_passed'):
                 battle_result, _ = BattleResult.objects.get_or_create(
                     room=room,
                     question=question,
@@ -130,7 +128,6 @@ class QuestionVerifyAPIView(APIView):
 
                 existing_results = battle_result.results
                 if any(result['username'] == request.user.username for result in existing_results):
-                    logger.info(f"User {request.user.username} already submitted for room {room_id}")
                     return Response({'message': 'You have already submitted a correct solution', 'all_passed': True}, status=status.HTTP_200_OK)
 
                 position = len(existing_results) + 1
@@ -140,25 +137,30 @@ class QuestionVerifyAPIView(APIView):
                     completion_time=timezone.now()
                 )
                 verification_result['position'] = position
-                logger.info(f"User {request.user.username} submitted correct solution, position: {position}")
 
+                # ----- New Ranking / Elo system -----
                 if room.is_ranked:
-                    points = self.assign_ranking_points(room.capacity, position)
-                    user_ranking, _ = UserRanking.objects.get_or_create(
-                        user=request.user,
-                        defaults={'points': 0}
-                    )
-                    user_ranking.points += points
-                    user_ranking.save()
-                    logger.info(f"Assigned {points} points to {request.user.username} for position {position}")
+                    participants = list(room.participants.all())
+                    if room.capacity == 2:
+                        calculate_elo_1v1(room.room_id, winner_id=request.user.user_id)
+                    elif 3 <= room.capacity <= 5:
+                        calculate_elo_squad(room)
+                    elif room.capacity >= 6:
+                        calculate_elo_team(room)
 
+                # Update user stats
+                if position == 1:
+                    request.user.battles_won += 1
+                    request.user.last_win = timezone.now().date()
+                    request.user.save()
+
+                # Room completion check
                 max_winners = {2: 1, 5: 2, 10: 3}.get(room.capacity, 1)
                 if len(existing_results) + 1 >= max_winners:
                     room.status = 'completed'
                     room.save()
-                    logger.info(f"Room {room_id} battle completed with {len(existing_results) + 1} winners")
-                    channel_layer = get_channel_layer()
                     cleanup_room_data.apply_async((room.room_id,), countdown=5 * 60)
+                    channel_layer = get_channel_layer()
                     async_to_sync(channel_layer.group_send)(
                         f"battle_{room_id}",
                         {
@@ -169,9 +171,7 @@ class QuestionVerifyAPIView(APIView):
                             'room_capacity': room.capacity,
                             'message': 'Battle Ended!'
                         }
-
                     )
-                    
                 else:
                     channel_layer = get_channel_layer()
                     async_to_sync(channel_layer.group_send)(
@@ -182,27 +182,15 @@ class QuestionVerifyAPIView(APIView):
                             'position': position,
                             'completion_time': timezone.now().isoformat()
                         }
-
                     )
-                
 
-            logger.info(f"Code verification {'successful' if verification_result['all_passed'] else 'failed'} for user {request.user.username} in room {room_id}")
             return Response(verification_result, status=status.HTTP_200_OK)
 
         except Exception as e:
             logger.error(f"Error verifying code for question {question_id}: {str(e)}")
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    def assign_ranking_points(self, capacity, position):
-        points_map = {
-            2: {1: 50, 2: 0},
-            5: {1: 70, 2: 40, 3: 0, 4: 0, 5: 0},
-            10: {1: 100, 2: 60, 3: 40, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0, 10: 0}
-        }
-        return points_map.get(capacity, {1: 50}).get(position, 0)
     
-
-
 class GlobalRankingAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -218,4 +206,4 @@ class GlobalRankingAPIView(APIView):
                 'points': rank.points
             })
 
-        return Response(ranking_data)
+        return Response(ranking_data)   

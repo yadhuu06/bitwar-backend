@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     'problems',
     'channels',
     'battle',
+    'rankings',
 
     
 ]
@@ -232,7 +233,14 @@ CELERY_RESULT_BACKEND = 'redis://localhost:6379/1'
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 
-
+# THE LANGUAGES AND ITS IDS FOR JUDGE0 CODE EXICUTION
+LANGUAGE_MAP = {
+    "python": 71,
+    "cpp": 54,
+    "java": 62,
+    "javascript": 63,
+    "go": 95,
+}
 
 # Email Configuration
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
@@ -277,6 +285,11 @@ CELERY_BEAT_SCHEDULE = {
     'cleanup-inactive-rooms-every-10-mins': {
         'task': 'battle.tasks.cleanup_inactive_rooms',  
         'schedule': crontab(minute='*/10'),  # Every 10 minutes
+    },
+    'create-new-season-every-30-days': {
+        'task': 'ranking.tasks.check_and_create_new_season',
+        'schedule': crontab(hour=0, minute=0, day_of_month='1'),  
+        
     },
 }
 

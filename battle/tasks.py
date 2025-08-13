@@ -52,14 +52,14 @@ def cleanup_inactive_rooms():
     now = timezone.now()
 
     inactive_rooms = Room.objects.filter(
-        status__in=['active', 'Playing'],
+        status__in=['active', 'Playing','completed'],
         start_time__isnull=True,
         created_at__lte=now - timedelta(hours=1)
     )
 
 
     stale_rooms = Room.objects.filter(
-        status__in=['active', 'Playing'],
+        status__in=['active', 'Playing','Completed'],
         start_time__isnull=False,
         start_time__lte=now - timedelta(minutes=65)
     )

@@ -127,10 +127,14 @@ class TestCaseListCreateAPIView(APIView):
 
         if not request.user.is_staff and question.created_by != request.user:
             return Response({"error": "You do not have permission to add test cases"}, status=status.HTTP_403_FORBIDDEN)
+        
 
         serializer = TestCaseSerializer(data=request.data)
         if serializer.is_valid():
+            question.is_validate=False
+            question.save()
             serializer.save(question=question)
+            
             return Response({
                 "message": "Test case created successfully",
                 "data": serializer.data
@@ -197,6 +201,7 @@ class CodeVerifyAPIView(APIView):
 
         result = verify_with_judge0(code, language, testcases)
         if "error" in result:
+            logger.info("fount the error int the result ogff code verify api view")
             return Response({"error": result["error"], "details": result.get("details", "")}, status=status.HTTP_400_BAD_REQUEST)
 
         solved_data = None
