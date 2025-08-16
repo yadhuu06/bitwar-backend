@@ -1,27 +1,29 @@
-import logging
 import json
-from random import randint
+import logging
 from datetime import timedelta
-from django.core.mail import send_mail
-from django.conf import settings
-from django.utils import timezone
-from django.contrib.auth import authenticate, get_user_model
-from rest_framework import status
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework.permissions import AllowAny, IsAuthenticated
-from rest_framework.throttling import AnonRateThrottle
-from rest_framework_simplejwt.tokens import RefreshToken
-from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken
-from rest_framework_simplejwt.exceptions import TokenError
-from social_django.utils import psa
-from imagekitio import ImageKit
+from random import randint
+
 from decouple import config
-from google.oauth2 import id_token
-from google.auth.transport import requests as google_requests
-from .models import OTP, CustomUser
-from .serializers import OTPSerializer, RegisterSerializer, UserSerializer
+from django.conf import settings
+from django.contrib.auth import authenticate, get_user_model
+from django.core.mail import send_mail
 from django.template.loader import render_to_string
+from django.utils import timezone
+from google.auth.transport import requests as google_requests
+from google.oauth2 import id_token
+from imagekitio import ImageKit
+from rest_framework import status
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.throttling import AnonRateThrottle
+from rest_framework.views import APIView
+from rest_framework_simplejwt.exceptions import TokenError
+from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken
+from rest_framework_simplejwt.tokens import RefreshToken
+from social_django.utils import psa
+
+from .models import CustomUser, OTP
+from .serializers import OTPSerializer, RegisterSerializer, UserSerializer
 
 logger = logging.getLogger(__name__)
 

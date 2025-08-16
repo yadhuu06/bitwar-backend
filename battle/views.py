@@ -1,22 +1,28 @@
 import logging
 from django.utils import timezone
 from django.shortcuts import get_object_or_404
+
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
+
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
+
 from problems.models import Question, TestCase, SolvedCode, Example
 from problems.serializers import QuestionListSerializer, TestCaseSerializer, ExampleSerializer
 from problems.services.judge0_service import verify_with_judge0
-from problems.utils import  extract_function_name_and_params
+from problems.utils import extract_function_name_and_params
+
 from battle.models import BattleResult, UserRanking
-from rankings.utils import calculate_elo_1v1,calculate_elo_squad,calculate_elo_team
+from rankings.utils import calculate_elo_1v1, calculate_elo_squad, calculate_elo_team
 from room.models import Room
-from channels.layers import get_channel_layer
-from asgiref.sync import async_to_sync
+
 from .tasks import cleanup_room_data
+
 logger = logging.getLogger(__name__)
-from . tasks import cleanup_room_data
+
 
 class BattleQuestionAPIView(APIView):
     permission_classes = [IsAuthenticated]
@@ -154,7 +160,7 @@ class QuestionVerifyAPIView(APIView):
                     request.user.last_win = timezone.now().date()
                     request.user.save()
 
-                # Room completion check
+
                 max_winners = {2: 1, 5: 2, 10: 3}.get(room.capacity, 1)
                 if len(existing_results) + 1 >= max_winners:
                     room.status = 'completed'

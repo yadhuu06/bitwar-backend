@@ -1,20 +1,18 @@
 from django.contrib.auth import authenticate
 from django.shortcuts import get_object_or_404
+
 from rest_framework import status
-from rest_framework.views import APIView
-from rest_framework.permissions import AllowAny, IsAuthenticated, IsAdminUser
+from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
+
 from authentication.models import CustomUser
-from room.models import Room
-from .serializers import RoomSerializer
-from .serializers import UserSerializer
+from battle.models import UserRanking
 from problems.models import Question
 from room.models import Room
-from authentication. models import CustomUser
-from battle.models import UserRanking
-from . serializers import UserRankingSerializer
 
+from .serializers import RoomSerializer, UserSerializer, UserRankingSerializer
 
 
 class UsersListView(APIView):

@@ -1,21 +1,22 @@
-from django.shortcuts import render
+import json
+import logging
+import traceback
+
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
 from django.db.models import F, Q
+from django.shortcuts import render
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from channels.layers import get_channel_layer
-from asgiref.sync import async_to_sync
-from django.utils import timezone
-import json
-import logging
-import traceback
+
+from authentication.models import CustomUser
+from problems.models import Question, Example
 from .models import Room, RoomParticipant
 from .serializers import RoomCreateSerializer
-from problems.models import Question, Example
 from .utils.battle import select_random_question
-from authentication.models import CustomUser
-from django.db.models import F
 
 logger = logging.getLogger(__name__)
 
